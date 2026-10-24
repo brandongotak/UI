@@ -137,6 +137,7 @@
 			<div
 				class="row-color-nohover row-class"
 				style="display: grid; grid-template-columns: 100px 240px 240px 240px 240px 240px; padding: 10px; color: #fff; opacity: 0.8; width: 1300px;"
+				onclick='captureMissionClick({{ items["name"] | tojson }})'
 			>
 				<div>{{items['name']}}</div>
 				<div>{{items['description']}}</div>
@@ -153,8 +154,8 @@
 	<div class="footer-tools" style="background-color: #27293d; justify-items: end;
 	padding: 16px 16px 16px 50px; display: grid; grid-template-columns: 1fr">
 		<div>
-			<div class="btn btn-simple btn-twitter" id="data-package-delete" style="color: #278aed; border-color: #278aed; display: inline-flex">
-				<span>DELETE</span> <span id="del-count">&nbsp;</span>
+			<div class="btn btn-simple btn-twitter" id="mission-delete" onclick="deleteMissions()" style="color: #278aed; border-color: #278aed; display: inline-flex">
+				<span>DELETE</span> <span id="del-mission-count">&nbsp;</span>
 			</div>
 			&nbsp;&nbsp;&nbsp;
 			<button class="btn btn-simple btn-twitter" style="color: #278aed; border-color: #278aed">ADD</button>
@@ -786,6 +787,43 @@ const authenticate = (socket) => {
 		});
 	}
 
+	var missionArr;
+
+	function captureMissionClick(name) {
+		if (missionArr.includes(name)) {
+			missionArr = missionArr.filter((item) => item !== name);
+		} else {
+			missionArr.push(name);
+		}
+		document.getElementById("del-mission-count").innerHTML = missionArr.length > 0 ? `&nbsp;[${missionArr.length}]` : ``;
+	}
+
+	function deleteMissions() {
+		if (missionArr.length === 0) {
+			snackFunction("Select the missions to delete first.");
+			return;
+		}
+		if (!confirm(`Delete ${missionArr.length} mission(s) from the server for everyone?`)) {
+			return;
+		}
+		headers = { Authorization: "{{apikey | safe}}", "Content-Type": "application/json" };
+		fetch("{{protocol}}://{{ip}}:{{port}}/MissionTable", {
+			method: "DELETE",
+			headers: headers,
+			body: JSON.stringify({ missions: missionArr }),
+		})
+			.then((response) => response.json())
+			.then((result) => {
+				if (result.failed && result.failed.length > 0) {
+					snackFunction(`Could not delete: ${result.failed.join(", ")}`);
+				} else {
+					snackFunction("Delete Successful. Refreshing data.");
+				}
+				refresh();
+			})
+			.catch(() => snackFunction("Mission delete failed."));
+	}
+
 	function deleteExcheck() {
 
 		let obj = {
@@ -974,6 +1012,7 @@ const authenticate = (socket) => {
 		ofDelArr = [];
 		ofEditArr = [];
 		excheckArr = [];
+		missionArr = [];
 	});
 </script>
 
