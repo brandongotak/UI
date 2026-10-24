@@ -203,6 +203,29 @@
 	</div>
 
 	<div class="card" style="padding: 16px;">
+		<div class="header-tools" style="display: grid; width: 100%; margin: 0 auto;
+		justify-content: flex-end; font-size: 20px; color: #278aed">[CERTIFICATE ENROLLMENT]</div>
+		<p style="padding: 0px 16px;">Lets TAK clients connect with only the server address, a username and a password.
+		A Let's Encrypt certificate is requested for the domain below, which must point at this server,
+		with ports 80 and 8446 reachable from the internet.</p>
+		<div style="padding: 0px 16px;" id="enrollmentStatus">Checking enrollment status...</div>
+		<div class="configure-outgoing-fed">
+			<div class="configure-outgoing-fed-element">
+				<div class="configure-outgoing-fed-label">Domain</div>
+				<div><input type="text" class="form-control" value="" id="enrollmentDomain" placeholder="tak.example.com" /></div>
+			</div>
+			<div class="configure-outgoing-fed-element">
+				<div class="configure-outgoing-fed-label">Email (optional)</div>
+				<div><input type="email" class="form-control" value="" id="enrollmentEmail" placeholder="for expiry notices" /></div>
+			</div>
+		</div>
+		<div style="padding: 16px; text-align: right;">
+			<button class="btn btn-simple btn-twitter" id="enrollmentSetupButton" onclick="setupEnrollment()"
+			style="color: #278aed; border-color: #278aed">Set up</button>
+		</div>
+	</div>
+
+	<div class="card" style="padding: 16px;">
 		
 		<div class="card">
 			<div class="card-body">
@@ -314,6 +337,7 @@ async function establishConnection() {
 	if (isAuth === "True") {
 		getServiceInfo(socket);
 		getEventsInfo(socket);
+		requestEnrollmentStatus();
 		
 	} else {
 		// throw error
@@ -503,6 +527,47 @@ let obj =	{
 	refresh();
 
 };
+
+// certificate enrollment: status is pushed back on enrollmentStatusUpdate,
+// setup results on setupEnrollmentResult (certbot can take a minute)
+const requestEnrollmentStatus = () => {
+	socket.emit("enrollmentStatus");
+};
+
+socket.on("enrollmentStatusUpdate", function (data) {
+	let status = JSON.parse(data);
+	let statusElement = document.getElementById("enrollmentStatus");
+	if (status.configured) {
+		statusElement.textContent = `Enabled for ${status.domain} on port ${status.port}; certificate valid until ${status.certExpiry}; service ${status.service}.`;
+		document.getElementById("enrollmentDomain").value = status.domain;
+	} else {
+		statusElement.textContent = "Not set up.";
+	}
+});
+
+const setupEnrollment = () => {
+	let domain = document.getElementById("enrollmentDomain").value.trim();
+	if (domain === "") {
+		snackFunction("Domain is required");
+		return;
+	}
+	document.getElementById("enrollmentSetupButton").disabled = true;
+	document.getElementById("enrollmentStatus").textContent = "Requesting a certificate from Let's Encrypt, this can take a minute...";
+	socket.emit("setupEnrollment", JSON.stringify({
+		domain: domain,
+		email: document.getElementById("enrollmentEmail").value.trim()
+	}));
+};
+
+socket.on("setupEnrollmentResult", function (data) {
+	let result = JSON.parse(data);
+	document.getElementById("enrollmentSetupButton").disabled = false;
+	document.getElementById("enrollmentStatus").textContent = result.message;
+	snackFunction(result.successful ? "Certificate enrollment enabled" : "Certificate enrollment setup failed");
+	if (result.successful) {
+		requestEnrollmentStatus();
+	}
+});
 
 function addOF() {
 		let obj =  {
