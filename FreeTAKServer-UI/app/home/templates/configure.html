@@ -227,6 +227,25 @@
 
 	<div class="card" style="padding: 16px;">
 		<div class="header-tools" style="display: grid; width: 100%; margin: 0 auto;
+		justify-content: flex-end; font-size: 20px; color: #278aed">[SERVER UPDATE]</div>
+		<p style="padding: 0px 16px;">Re-runs the installer to update FreeTAKServer and this UI from their git repositories.
+		It takes a few minutes and restarts the services, so connected devices drop briefly and this page reconnects.</p>
+		<div style="padding: 0px 16px;">
+			<div>FreeTAKServer: <span id="updateFtsVersion">checking...</span></div>
+			<div>UI: <span id="updateUiVersion">checking...</span></div>
+			<div>Status: <span id="updateState">checking...</span></div>
+		</div>
+		<pre id="updateLog" style="margin: 8px 16px; max-height: 240px; overflow-y: auto; white-space: pre-wrap; color: #ccc; display: none;"></pre>
+		<div style="padding: 16px; text-align: right;">
+			<button class="btn btn-simple btn-twitter" id="updateRollbackButton" onclick="startUpdate(true)"
+			style="color: #278aed; border-color: #278aed" disabled>Roll back</button>
+			<button class="btn btn-simple btn-twitter" id="updateStartButton" onclick="startUpdate(false)"
+			style="color: #278aed; border-color: #278aed" disabled>Update</button>
+		</div>
+	</div>
+
+	<div class="card" style="padding: 16px;">
+		<div class="header-tools" style="display: grid; width: 100%; margin: 0 auto;
 		justify-content: flex-end; font-size: 20px; color: #278aed">[CONNECTION MESSAGE]</div>
 		<p style="padding: 0px 16px;">Chat message sent to each device when it connects. Changes apply to the next connection, no restart needed.</p>
 		<div style="padding: 0px 16px; display: flex; align-items: center; gap: 12px;">
@@ -548,6 +567,77 @@ let obj =	{
 	refresh();
 
 };
+
+// server update: served by this UI's own backend (not FTS), so it keeps
+// working while FTS restarts or if an update breaks it
+let updatePollTimer = null;
+
+const shortCommit = (commit) => commit ? commit.substring(0, 7) : "unknown";
+
+const describeVersion = (component) => {
+	if (!component.installed) {
+		return `not installed from git (latest ${shortCommit(component.latest)})`;
+	}
+	if (component.latest && component.installed !== component.latest) {
+		return `${shortCommit(component.installed)}, update available: ${shortCommit(component.latest)}`;
+	}
+	return `${shortCommit(component.installed)} (up to date)`;
+};
+
+const refreshUpdateStatus = () => {
+	fetch("/update/status", { credentials: "same-origin" })
+		.then((response) => response.json())
+		.then((status) => {
+			if (status.error) {
+				document.getElementById("updateState").textContent = status.error;
+				return;
+			}
+			document.getElementById("updateFtsVersion").textContent = describeVersion(status.fts);
+			document.getElementById("updateUiVersion").textContent = describeVersion(status.ui);
+			let state = status.update.state;
+			let detail = status.update.finished ? ` (${status.update.kind} finished ${status.update.finished})` : "";
+			document.getElementById("updateState").textContent = state + detail;
+			let log = document.getElementById("updateLog");
+			log.textContent = status.log;
+			log.style.display = status.log ? "block" : "none";
+			log.scrollTop = log.scrollHeight;
+			let isRunning = state === "running";
+			document.getElementById("updateStartButton").disabled = isRunning;
+			document.getElementById("updateRollbackButton").disabled = isRunning || !status.rollbackAvailable;
+			clearTimeout(updatePollTimer);
+			if (isRunning) {
+				updatePollTimer = setTimeout(refreshUpdateStatus, 5000);
+			}
+		})
+		.catch(() => {
+			// the UI itself restarts during an update; keep trying
+			document.getElementById("updateState").textContent = "running (UI restarting, reconnecting...)";
+			clearTimeout(updatePollTimer);
+			updatePollTimer = setTimeout(refreshUpdateStatus, 5000);
+		});
+};
+
+const startUpdate = (rollback) => {
+	let question = rollback
+		? "Roll back FreeTAKServer and the UI to the version installed before the last update? Services will restart."
+		: "Update FreeTAKServer and the UI now? Services will restart and devices will reconnect.";
+	if (!confirm(question)) {
+		return;
+	}
+	fetch(`/update/start${rollback ? "?rollback=1" : ""}`, {
+		method: "POST",
+		credentials: "same-origin",
+		headers: { "X-FTS-Update": "1" },
+	})
+		.then((response) => response.json())
+		.then((result) => {
+			snackFunction(result.message || result.error);
+			refreshUpdateStatus();
+		})
+		.catch(() => snackFunction("Starting the update failed"));
+};
+
+refreshUpdateStatus();
 
 // connection message: current setting arrives on connectionMessageUpdate,
 // also sent back after a save with saved: true/false

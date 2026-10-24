@@ -16,10 +16,37 @@ from app.base.forms import UpdateAccountForm
 from app.base.models import User
 from app import db
 from requests.exceptions import ConnectionError
+import json
+import subprocess
+
+# installed by the FreeTAKHub installer; the UI runs as root on the FTS host
+FTS_UPDATE = "/usr/local/sbin/fts-update"
 
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.filter_by(uid=user_id).first()
+
+def run_fts_update(*args):
+    """call the fts-update helper, which prints JSON"""
+    try:
+        result = subprocess.run([FTS_UPDATE, *args], capture_output=True, text=True, timeout=60)
+        return json.loads(result.stdout)
+    except (OSError, ValueError, subprocess.TimeoutExpired) as e:
+        return {"error": f"fts-update is not available: {e}"}
+
+@blueprint.route('/update/status')
+@login_required
+def update_status():
+    return run_fts_update("status")
+
+@blueprint.route('/update/start', methods=['POST'])
+@login_required
+def update_start():
+    # a cross-site form can't send this header, so another page can't make a
+    # logged-in admin's browser start an update
+    if request.headers.get("X-FTS-Update") != "1":
+        return {"error": "missing X-FTS-Update header"}, 400
+    return run_fts_update("start", *(["--rollback"] if request.args.get("rollback") == "1" else []))
 
 @blueprint.route('/index')
 @login_required
