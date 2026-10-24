@@ -815,7 +815,7 @@ const authenticate = (socket) => {
 			.then((response) => response.json())
 			.then((result) => {
 				if (result.failed && result.failed.length > 0) {
-					snackFunction(`Could not delete: ${result.failed.join(", ")}`);
+					snackFunction(`Could not delete: ${result.failed.map((item) => `${item.name} (${item.status})`).join(", ")}`);
 				} else {
 					snackFunction("Delete Successful. Refreshing data.");
 				}
