@@ -226,6 +226,26 @@
 	</div>
 
 	<div class="card" style="padding: 16px;">
+		<div class="header-tools" style="display: grid; width: 100%; margin: 0 auto;
+		justify-content: flex-end; font-size: 20px; color: #278aed">[CONNECTION MESSAGE]</div>
+		<p style="padding: 0px 16px;">Chat message sent to each device when it connects. Changes apply to the next connection, no restart needed.</p>
+		<div style="padding: 0px 16px; display: flex; align-items: center; gap: 12px;">
+			<label class="configure-elem-lbl">Send message</label>
+			<label class="switch">
+				<input type="checkbox" id="connectionMessageOnOffSwitch">
+				<span class="slider round"></span></label>
+		</div>
+		<div style="padding: 8px 16px;">
+			<textarea class="form-control" id="connectionMessageText" rows="3" maxlength="1000"
+			placeholder="Welcome to FreeTAKServer"></textarea>
+		</div>
+		<div style="padding: 16px; text-align: right;">
+			<button class="btn btn-simple btn-twitter" onclick="saveConnectionMessage()"
+			style="color: #278aed; border-color: #278aed">Save</button>
+		</div>
+	</div>
+
+	<div class="card" style="padding: 16px;">
 		
 		<div class="card">
 			<div class="card-body">
@@ -338,6 +358,7 @@ async function establishConnection() {
 		getServiceInfo(socket);
 		getEventsInfo(socket);
 		requestEnrollmentStatus();
+		socket.emit("connectionMessage");
 		
 	} else {
 		// throw error
@@ -526,6 +547,26 @@ let obj =	{
 	snackFunction("Configuration updated. Refreshing data.");
 	refresh();
 
+};
+
+// connection message: current setting arrives on connectionMessageUpdate,
+// also sent back after a save with saved: true/false
+socket.on("connectionMessageUpdate", function (data) {
+	let settings = JSON.parse(data);
+	document.getElementById("connectionMessageOnOffSwitch").checked = settings.enabled;
+	document.getElementById("connectionMessageText").value = settings.message;
+	if (settings.saved === true) {
+		snackFunction("Connection message saved");
+	} else if (settings.saved === false) {
+		snackFunction("Saving the connection message failed");
+	}
+});
+
+const saveConnectionMessage = () => {
+	socket.emit("setConnectionMessage", JSON.stringify({
+		enabled: document.getElementById("connectionMessageOnOffSwitch").checked,
+		message: document.getElementById("connectionMessageText").value
+	}));
 };
 
 // certificate enrollment: status is pushed back on enrollmentStatusUpdate,
