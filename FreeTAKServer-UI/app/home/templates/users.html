@@ -58,7 +58,7 @@
 	<div style="display: none" id="addUser">
 		<div class="user-add-section">
 			<div><input type="text" class="form-control" id="name1" value="" placeholder="Name" /></div>
-			<div><select multiple class="form-control" id="group1" title="Groups (none selected: __ANON__)"></select></div>
+			<div id="group1" title="Groups (none ticked: __ANON__)" style="color: #b5b5b5;"></div>
 			<div><input type="text" class="form-control" id="token1" value="" placeholder="Token" /></div>
 			<div><input type="text" class="form-control" id="password1" value="" placeholder="Password" /></div>
 
@@ -205,19 +205,28 @@
 	const parseGroups = (field) =>
 		(field || "").split(",").map((name) => name.trim()).filter((name) => name && name !== "None" && name !== "__ANON__");
 
-	const selectedGroups = (select) => Array.from(select.selectedOptions).map((option) => option.value).join(", ");
+	// checkboxes rather than a multi-select, which needs ctrl/shift-click to pick several
+	const selectedGroups = (container) =>
+		Array.from(container.querySelectorAll("input[type=checkbox]:checked")).map((box) => box.value).join(", ");
 
-	const fillGroupSelect = (select, current) => {
+	const fillGroupSelect = (container, current) => {
 		let names = Array.from(new Set(availableGroups.concat(current))).sort();
-		select.replaceChildren();
-		for (let name of names) {
-			let option = document.createElement("option");
-			option.value = name;
-			option.textContent = name;
-			option.selected = current.includes(name);
-			select.appendChild(option);
+		container.replaceChildren();
+		if (names.length === 0) {
+			container.textContent = "no groups yet (add them on the configure page)";
 		}
-		select.size = Math.min(Math.max(names.length, 2), 5);
+		for (let name of names) {
+			let label = document.createElement("label");
+			label.style.marginRight = "10px";
+			label.style.whiteSpace = "nowrap";
+			let box = document.createElement("input");
+			box.type = "checkbox";
+			box.value = name;
+			box.checked = current.includes(name);
+			label.appendChild(box);
+			label.appendChild(document.createTextNode(" " + name));
+			container.appendChild(label);
+		}
 	};
 
 	const getGroups = (socket) => {
@@ -309,10 +318,8 @@
 					groupCell.className = "user-cell-style-1";
 					// editing groups shouldn't toggle the row's delete selection
 					groupCell.onclick = (event) => event.stopPropagation();
-					let groupSelect = document.createElement("select");
-					groupSelect.multiple = true;
-					groupSelect.className = "form-control";
-					groupSelect.title = "none selected: __ANON__";
+					let groupSelect = document.createElement("div");
+					groupSelect.title = "none ticked: __ANON__";
 					let currentGroups = parseGroups(row.Group);
 					fillGroupSelect(groupSelect, currentGroups);
 					groupSelectors.push({ select: groupSelect, current: currentGroups });
