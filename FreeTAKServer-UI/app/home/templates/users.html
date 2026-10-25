@@ -58,7 +58,7 @@
 	<div style="display: none" id="addUser">
 		<div class="user-add-section">
 			<div><input type="text" class="form-control" id="name1" value="" placeholder="Name" /></div>
-			<div id="group1" title="Groups (none ticked: __ANON__)" style="color: #b5b5b5;"></div>
+			<div id="group1" title="Groups (none ticked: Public only)" style="color: #b5b5b5;"></div>
 			<div><input type="text" class="form-control" id="token1" value="" placeholder="Token" /></div>
 			<div><input type="text" class="form-control" id="password1" value="" placeholder="Password" /></div>
 
@@ -202,19 +202,25 @@
 	var availableGroups = [];
 	var groupSelectors = [];
 
-	const parseGroups = (field) =>
-		(field || "").split(",").map((name) => name.trim()).filter((name) => name && name !== "None" && name !== "__ANON__");
+	// __ANON__ is the group TAK clients show as "Public"
+	const PUBLIC_GROUP = "__ANON__";
+	const groupLabel = (name) => (name === PUBLIC_GROUP ? "Public" : name);
+
+	// an empty field means Public, so show it ticked
+	const parseGroups = (field) => {
+		let names = (field || "").split(",").map((name) => name.trim()).filter((name) => name && name !== "None");
+		return names.length > 0 ? names : [PUBLIC_GROUP];
+	};
 
 	// checkboxes rather than a multi-select, which needs ctrl/shift-click to pick several
 	const selectedGroups = (container) =>
 		Array.from(container.querySelectorAll("input[type=checkbox]:checked")).map((box) => box.value).join(", ");
 
 	const fillGroupSelect = (container, current) => {
-		let names = Array.from(new Set(availableGroups.concat(current))).sort();
+		// Public first, then the rest alphabetically
+		let names = Array.from(new Set(availableGroups.concat(current))).filter((name) => name !== PUBLIC_GROUP).sort();
+		names.unshift(PUBLIC_GROUP);
 		container.replaceChildren();
-		if (names.length === 0) {
-			container.textContent = "no groups yet (add them on the configure page)";
-		}
 		for (let name of names) {
 			let label = document.createElement("label");
 			label.style.marginRight = "10px";
@@ -224,7 +230,7 @@
 			box.value = name;
 			box.checked = current.includes(name);
 			label.appendChild(box);
-			label.appendChild(document.createTextNode(" " + name));
+			label.appendChild(document.createTextNode(" " + groupLabel(name)));
 			container.appendChild(label);
 		}
 	};
@@ -232,7 +238,7 @@
 	const getGroups = (socket) => {
 		socket.emit("groupsStatus");
 		socket.on("groupsStatusUpdate", function (data) {
-			availableGroups = JSON.parse(data).groups.filter((name) => name !== "__ANON__");
+			availableGroups = JSON.parse(data).groups;
 			fillGroupSelect(document.getElementById("group1"), parseGroups(selectedGroups(document.getElementById("group1"))));
 			for (let selector of groupSelectors) {
 				fillGroupSelect(selector.select, selector.current);
@@ -319,7 +325,7 @@
 					// editing groups shouldn't toggle the row's delete selection
 					groupCell.onclick = (event) => event.stopPropagation();
 					let groupSelect = document.createElement("div");
-					groupSelect.title = "none ticked: __ANON__";
+					groupSelect.title = "none ticked: Public only";
 					let currentGroups = parseGroups(row.Group);
 					fillGroupSelect(groupSelect, currentGroups);
 					groupSelectors.push({ select: groupSelect, current: currentGroups });
