@@ -58,7 +58,7 @@
 	<div style="display: none" id="addUser">
 		<div class="user-add-section">
 			<div><input type="text" class="form-control" id="name1" value="" placeholder="Name" /></div>
-			<div><input type="text" class="form-control" id="group1" value="" placeholder="Group" /></div>
+			<div><input type="text" class="form-control" id="group1" value="" placeholder="Groups, e.g. alpha, medics (empty: __ANON__)" /></div>
 			<div><input type="text" class="form-control" id="token1" value="" placeholder="Token" /></div>
 			<div><input type="text" class="form-control" id="password1" value="" placeholder="Password" /></div>
 
@@ -372,9 +372,6 @@
 	const addUser = async () => {
 		if (document.getElementById("name1").value === "") {
 			snackFunction("Name field is mandatory");
-			return false;
-		} else if (document.getElementById("group1").value === "") {
-			snackFunction("Group field is mandatory");
 			return false;
 		} else if (document.getElementById("token1").value === "") {
 			snackFunction("Token field is mandatory");

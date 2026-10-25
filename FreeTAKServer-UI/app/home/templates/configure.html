@@ -246,6 +246,22 @@
 
 	<div class="card" style="padding: 16px;">
 		<div class="header-tools" style="display: grid; width: 100%; margin: 0 auto;
+		justify-content: flex-end; font-size: 20px; color: #278aed">[GROUPS / CHANNELS]</div>
+		<p style="padding: 0px 16px;">When on, devices only receive map/CoT traffic from devices sharing an active group.
+		Assign groups per user on the Users page (comma separated); users without groups, unknown certificates
+		and the plain TCP port are in __ANON__. Review the groups below before switching on: every user's
+		Group field becomes their group. Switching off restores normal routing within seconds.</p>
+		<div style="padding: 0px 16px; display: flex; align-items: center; gap: 12px;">
+			<label class="configure-elem-lbl">Group routing</label>
+			<label class="switch">
+				<input type="checkbox" id="groupsOnOffSwitch" onclick="toggleGroups(event)">
+				<span class="slider round"></span></label>
+		</div>
+		<div style="padding: 8px 16px;">Groups in use: <span id="groupsList">checking...</span></div>
+	</div>
+
+	<div class="card" style="padding: 16px;">
+		<div class="header-tools" style="display: grid; width: 100%; margin: 0 auto;
 		justify-content: flex-end; font-size: 20px; color: #278aed">[CONNECTION MESSAGE]</div>
 		<p style="padding: 0px 16px;">Chat message sent to each device when it connects. Changes apply to the next connection, no restart needed.</p>
 		<div style="padding: 0px 16px; display: flex; align-items: center; gap: 12px;">
@@ -378,6 +394,7 @@ async function establishConnection() {
 		getEventsInfo(socket);
 		requestEnrollmentStatus();
 		socket.emit("connectionMessage");
+		socket.emit("groupsStatus");
 		
 	} else {
 		// throw error
@@ -638,6 +655,30 @@ const startUpdate = (rollback) => {
 };
 
 refreshUpdateStatus();
+
+// groups: status arrives on groupsStatusUpdate, also after a change (saved: true/false)
+socket.on("groupsStatusUpdate", function (data) {
+	let status = JSON.parse(data);
+	document.getElementById("groupsOnOffSwitch").checked = status.enabled;
+	document.getElementById("groupsList").textContent = status.groups.join(", ");
+	if (status.saved === true) {
+		snackFunction(status.enabled ? "Group routing on" : "Group routing off");
+	} else if (status.saved === false) {
+		snackFunction("Changing group routing failed");
+	}
+});
+
+const toggleGroups = (event) => {
+	let enabled = event.target.checked;
+	let question = enabled
+		? "Turn on group routing? Devices will only see traffic from devices that share a group with them."
+		: "Turn off group routing? All devices will see each other again.";
+	if (!confirm(question)) {
+		event.preventDefault();
+		return;
+	}
+	socket.emit("setGroupsEnabled", JSON.stringify({ enabled: enabled }));
+};
 
 // connection message: current setting arrives on connectionMessageUpdate,
 // also sent back after a save with saved: true/false
