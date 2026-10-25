@@ -58,7 +58,7 @@
 	<div style="display: none" id="addUser">
 		<div class="user-add-section">
 			<div><input type="text" class="form-control" id="name1" value="" placeholder="Name" /></div>
-			<div><input type="text" class="form-control" id="group1" value="" placeholder="Groups, e.g. alpha, medics (empty: __ANON__)" /></div>
+			<div><select multiple class="form-control" id="group1" title="Groups (none selected: __ANON__)"></select></div>
 			<div><input type="text" class="form-control" id="token1" value="" placeholder="Token" /></div>
 			<div><input type="text" class="form-control" id="password1" value="" placeholder="Password" /></div>
 
@@ -170,6 +170,8 @@
 		let isAuth = await authenticate(socket);
 
 		if (isAuth === "True") {
+			usersSocket = socket;
+			getGroups(socket);
 			getUserInfo(socket);
 			getEventsInfo(socket);
 		} else {
@@ -192,6 +194,47 @@
 				}
 			});
 		});
+	};
+
+	// groups: picked from the groups FTS knows (defined on the configure page or
+	// already assigned); a user with no groups is in __ANON__
+	var usersSocket = null;
+	var availableGroups = [];
+	var groupSelectors = [];
+
+	const parseGroups = (field) =>
+		(field || "").split(",").map((name) => name.trim()).filter((name) => name && name !== "None" && name !== "__ANON__");
+
+	const selectedGroups = (select) => Array.from(select.selectedOptions).map((option) => option.value).join(", ");
+
+	const fillGroupSelect = (select, current) => {
+		let names = Array.from(new Set(availableGroups.concat(current))).sort();
+		select.replaceChildren();
+		for (let name of names) {
+			let option = document.createElement("option");
+			option.value = name;
+			option.textContent = name;
+			option.selected = current.includes(name);
+			select.appendChild(option);
+		}
+		select.size = Math.min(Math.max(names.length, 2), 5);
+	};
+
+	const getGroups = (socket) => {
+		socket.emit("groupsStatus");
+		socket.on("groupsStatusUpdate", function (data) {
+			availableGroups = JSON.parse(data).groups.filter((name) => name !== "__ANON__");
+			fillGroupSelect(document.getElementById("group1"), parseGroups(selectedGroups(document.getElementById("group1"))));
+			for (let selector of groupSelectors) {
+				fillGroupSelect(selector.select, selector.current);
+			}
+		});
+	};
+
+	const saveUserGroups = (uid, select) => {
+		usersSocket.emit("updateSystemUser", JSON.stringify({ systemUsers: [{ uid: uid, Group: selectedGroups(select) }] }));
+		snackFunction("Groups saved, refreshing data");
+		refresh();
 	};
 
 	const getUserInfo = (socket) => {
@@ -263,8 +306,22 @@
 					nameCell.className = "user-cell-style-1";
 
 					let groupCell = t_row.insertCell();
-					groupCell.textContent = row.Group;
 					groupCell.className = "user-cell-style-1";
+					// editing groups shouldn't toggle the row's delete selection
+					groupCell.onclick = (event) => event.stopPropagation();
+					let groupSelect = document.createElement("select");
+					groupSelect.multiple = true;
+					groupSelect.className = "form-control";
+					groupSelect.title = "none selected: __ANON__";
+					let currentGroups = parseGroups(row.Group);
+					fillGroupSelect(groupSelect, currentGroups);
+					groupSelectors.push({ select: groupSelect, current: currentGroups });
+					let saveGroups = document.createElement("button");
+					saveGroups.className = "btn btn-simple btn-twitter btn-sm";
+					saveGroups.textContent = "Save";
+					saveGroups.onclick = () => saveUserGroups(row.Uid, groupSelect);
+					groupCell.appendChild(groupSelect);
+					groupCell.appendChild(saveGroups);
 
 					let tokenCell = t_row.insertCell();
 					// tokenCell.textContent = row.Token;
@@ -392,7 +449,7 @@
 			systemUsers: [
 				{
 					Name: document.getElementById("name1").value,
-					Group: document.getElementById("group1").value,
+					Group: selectedGroups(document.getElementById("group1")),
 					Token: document.getElementById("token1").value,
 					Password: document.getElementById("password1").value,
 					Certs: document.getElementById("certbool").value,
@@ -410,7 +467,6 @@
 		if (isAuth === "True") {
 			socket.emit("addSystemUser", JSON.stringify(obj));
 			document.getElementById("name1").value = "";
-			document.getElementById("group1").value = "";
 			document.getElementById("token1").value = "";
 			document.getElementById("password1").value = "";
 			document.getElementById("certbool").value = "";

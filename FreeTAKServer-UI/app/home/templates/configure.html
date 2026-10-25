@@ -258,6 +258,12 @@
 				<span class="slider round"></span></label>
 		</div>
 		<div style="padding: 8px 16px;">Groups in use: <span id="groupsList">checking...</span></div>
+		<div style="padding: 8px 16px;">Groups offered on the Users page:</div>
+		<div style="padding: 0px 16px;" id="definedGroups"></div>
+		<div style="padding: 8px 16px; display: flex; gap: 8px;">
+			<input type="text" class="form-control" id="newGroupName" maxlength="50" placeholder="New group name" style="max-width: 260px;" />
+			<button class="btn btn-simple btn-twitter" onclick="addGroup()" style="color: #278aed; border-color: #278aed">Add group</button>
+		</div>
 	</div>
 
 	<div class="card" style="padding: 16px;">
@@ -661,12 +667,46 @@ socket.on("groupsStatusUpdate", function (data) {
 	let status = JSON.parse(data);
 	document.getElementById("groupsOnOffSwitch").checked = status.enabled;
 	document.getElementById("groupsList").textContent = status.groups.join(", ");
+	let defined = document.getElementById("definedGroups");
+	defined.replaceChildren();
+	if (status.defined.length === 0) {
+		defined.textContent = "none yet";
+	}
+	for (let name of status.defined) {
+		let chip = document.createElement("span");
+		chip.style.marginRight = "12px";
+		chip.textContent = name + " ";
+		let remove = document.createElement("a");
+		remove.href = "#";
+		remove.textContent = "[remove]";
+		remove.onclick = (event) => {
+			event.preventDefault();
+			if (confirm(`Stop offering group "${name}"? Users who have it keep it until edited.`)) {
+				socket.emit("removeGroup", JSON.stringify({ name: name }));
+			}
+		};
+		chip.appendChild(remove);
+		defined.appendChild(chip);
+	}
+	if (status.error) {
+		snackFunction(status.error);
+	}
 	if (status.saved === true) {
 		snackFunction(status.enabled ? "Group routing on" : "Group routing off");
 	} else if (status.saved === false) {
 		snackFunction("Changing group routing failed");
 	}
 });
+
+const addGroup = () => {
+	let name = document.getElementById("newGroupName").value.trim();
+	if (name === "") {
+		snackFunction("Enter a group name");
+		return;
+	}
+	socket.emit("addGroup", JSON.stringify({ name: name }));
+	document.getElementById("newGroupName").value = "";
+};
 
 const toggleGroups = (event) => {
 	let enabled = event.target.checked;

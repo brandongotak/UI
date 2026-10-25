@@ -94,8 +94,9 @@
 		var updatedUserDetails = {}
 		updatedUserDetails.Password = document.getElementById('password').value;
 		updatedUserDetails.Token = document.getElementById('token').value;
-		if (document.getElementById('group') !== null) {
-			updatedUserDetails.Group = document.getElementById('group').value;
+		// the WTForms field's id is group_update
+		if (document.getElementById('group_update') !== null) {
+			updatedUserDetails.Group = document.getElementById('group_update').value;
 		}
 		updatedUserDetails.uid = "{{ user_id }}"
 		socket.emit("updateSystemUser", JSON.stringify({"systemUsers": [updatedUserDetails]}))
