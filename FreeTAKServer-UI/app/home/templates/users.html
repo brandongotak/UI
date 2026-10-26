@@ -21,6 +21,52 @@
 		color: #ffffff;
 		background-color: #278aed;
 	}
+
+	/* user list: one table with a sticky header, using most of the screen */
+	.users-panel {
+		max-height: 70vh;
+		min-height: 240px;
+		overflow: auto;
+		background-color: #27293d;
+	}
+
+	.users-table,
+	.groups-table {
+		width: 100%;
+		border-collapse: collapse;
+	}
+
+	.users-table th,
+	.groups-table th {
+		position: sticky;
+		top: 0;
+		z-index: 1;
+		background-color: #27293d;
+		color: #b5b5b5;
+		font-size: 16px;
+		font-weight: 600;
+		text-align: left;
+		padding: 12px 14px;
+	}
+
+	.users-table td,
+	.groups-table td {
+		color: #fff;
+		opacity: 0.85;
+		padding: 12px 14px;
+		vertical-align: top;
+		border-top: 1px solid #34364a;
+	}
+
+	.users-table .groups-cell {
+		min-width: 260px;
+	}
+
+	.groups-panel {
+		max-height: 50vh;
+		overflow: auto;
+		background-color: #27293d;
+	}
 </style>
 {% endblock stylesheets %} {% block content %}
 
@@ -33,7 +79,7 @@
 	<div id="loading" style="display: grid; place-self: center">
 		<img src="/static/assets/img/spinner1.svg" width="80px" height="80px" />
 	</div>
-	<div style="max-height: 300px; max-width: 100%; overflow-y: scroll; overflow-x: scroll; display: table-cell">
+	<div class="users-panel">
 	<div id="user-table-hdr"></div>
 	<div id="user-table"></div>
 </div>
@@ -84,73 +130,20 @@
 </div>
 <br /><br />
 <div style="width: 100%; display: grid; padding: 5px; margin: 0 auto; background-color: #27293d">
-	<div class="header-tools" style="justify-self: flex-end; font-size: 20px; padding-right: 20px; color: #278aed">[GROUP PERMISSIONS]</div>
+	<div class="header-tools" style="justify-self: flex-end; font-size: 20px; padding-right: 20px; color: #278aed">[GROUPS]</div>
 </div>
-
-<div style="display: grid; grid-template-columns: 1fr">
-	<div style="display: grid; grid-template-columns: 1fr 1fr">
-		<div class="datatable-container" style="width: 100%">
-			<table class="datatable">
-				<thead>
-					<tr>
-						<th style="font-size: 16px; color: #b5b5b5">Name</th>
-						<th style="font-size: 16px; color: #b5b5b5">Description</th>
-					</tr>
-				</thead> 
-
-				<tbody>
-					<tr>
-						<td style="font-size: 14px; opacity: 0.8">Yellow</td>
-						<td style="font-size: 14px; opacity: 0.8">Admins</td>
-					</tr>
-
-					<tr>
-						<td style="font-size: 14px; opacity: 0.8">Green</td>
-						<td style="font-size: 14px; opacity: 0.8">Users</td>
-					</tr>
-					<tr>
-						<td style="font-size: 14px; opacity: 0.8">Blue</td>
-						<td style="font-size: 14px; opacity: 0.8">Morons</td>
-					</tr>
-				</tbody>
-			</table>
-		</div>
-		<div>
-			<div class="multiselect">
-				<label
-					><input type="checkbox" checked name="option[]" value="1" />
-					<span style="color: #fff; opacity: 0.8; padding: 0px 0px 0px 16px"> Enemy CoT </span></label
-				>
-				<label
-					><input type="checkbox" name="option[]" value="2" />
-					<span style="color: #fff; opacity: 0.8; padding: 0px 0px 0px 16px">Create Friendly CoT</span></label
-				>
-				<label
-					><input type="checkbox" name="option[]" value="3" /><span style="color: #fff; opacity: 0.8; padding: 0px 0px 0px 16px"
-						>Create EMS CoT</span
-					></label
-				>
-				<label
-					><input type="checkbox" checked name="option[]" value="4" /><span style="color: #fff; opacity: 0.8; padding: 0px 0px 0px 16px"
-						>Create Routes CoT</span
-					></label
-				>
-			</div>
-		</div>
-	</div>
-
-	<div
-		class="footer-tools"
-		style="background-color: #27293d; text-align: right; padding: 16px 16px 16px 50px; display: grid; grid-template-columns: 1fr"
-	>
-		<div>
-			<div class="btn btn-simple btn-twitter" style="color: #278aed80; border-color: #278aed80; display: inline-flex">
-				<span>DELETE</span> <span id="del-count">&nbsp;</span>
-			</div>
-			&nbsp;&nbsp;&nbsp;
-			<button class="btn btn-simple btn-twitter" style="color: #278aed80; border-color: #278aed80">ADD</button>
-		</div>
-	</div>
+<div class="groups-panel">
+	<table class="groups-table">
+		<thead>
+			<tr><th>Group</th><th>Users</th><th>Members</th><th></th></tr>
+		</thead>
+		<tbody id="groups-overview"></tbody>
+	</table>
+</div>
+<div style="background-color: #27293d; padding: 16px 20px; display: flex; gap: 10px; justify-content: flex-end; align-items: center">
+	<span style="color: #b5b5b5">Groups control which devices see each other's traffic while group routing is on (Configure page).</span>
+	<input type="text" class="form-control" id="newGroupName" maxlength="50" placeholder="New group name" style="max-width: 240px" />
+	<button class="btn btn-simple btn-twitter" onclick="addGroup()" style="color: #278aed; border-color: #278aed">Add group</button>
 </div>
 
 <div id="snackbar">&nbsp;</div>
@@ -238,12 +231,59 @@
 	const getGroups = (socket) => {
 		socket.emit("groupsStatus");
 		socket.on("groupsStatusUpdate", function (data) {
-			availableGroups = JSON.parse(data).groups;
+			let status = JSON.parse(data);
+			availableGroups = status.groups;
+			definedGroups = status.defined || [];
+			if (status.error) {
+				snackFunction(status.error);
+			}
+			renderGroupsOverview();
 			fillGroupSelect(document.getElementById("group1"), parseGroups(selectedGroups(document.getElementById("group1"))));
 			for (let selector of groupSelectors) {
 				fillGroupSelect(selector.select, selector.current);
 			}
 		});
+	};
+
+	var allUsers = [];
+	var definedGroups = [];
+
+	// one row per group with its members, computed from the user list
+	const renderGroupsOverview = () => {
+		let tbody = document.getElementById("groups-overview");
+		let names = Array.from(new Set(availableGroups.concat(definedGroups))).filter((name) => name !== PUBLIC_GROUP).sort();
+		names.unshift(PUBLIC_GROUP);
+		tbody.replaceChildren();
+		for (let name of names) {
+			let members = allUsers.filter((user) => parseGroups(user.Group).includes(name)).map((user) => user.Name);
+			let row = tbody.insertRow();
+			row.insertCell().textContent = groupLabel(name) + (name === PUBLIC_GROUP ? " (__ANON__, also plain TCP clients)" : "");
+			row.insertCell().textContent = members.length;
+			row.insertCell().textContent = members.length ? members.join(", ") : "-";
+			let actions = row.insertCell();
+			if (definedGroups.includes(name)) {
+				let remove = document.createElement("a");
+				remove.href = "#";
+				remove.textContent = "remove";
+				remove.onclick = (event) => {
+					event.preventDefault();
+					if (confirm(`Stop offering group "${name}"? Users who have it keep it until edited.`)) {
+						usersSocket.emit("removeGroup", JSON.stringify({ name: name }));
+					}
+				};
+				actions.appendChild(remove);
+			}
+		}
+	};
+
+	const addGroup = () => {
+		let name = document.getElementById("newGroupName").value.trim();
+		if (name === "") {
+			snackFunction("Enter a group name");
+			return;
+		}
+		usersSocket.emit("addGroup", JSON.stringify({ name: name }));
+		document.getElementById("newGroupName").value = "";
 	};
 
 	const saveUserGroups = (uid, select) => {
@@ -263,102 +303,60 @@
 			// console.log("Print USER Response:" + JSON.stringify(userInfoObject));
 			document.getElementById("loading").style.display = "none";
 
-			//create a Table Object
-			let tablehdr = document.createElement("table");
-			tablehdr.className = "table-style-hdr";
-
-			let headerRow = tablehdr.insertRow();
-			let nameHdr = headerRow.insertCell();
-			nameHdr.textContent = "Name";
-			nameHdr.className = "user_c1";
-			let groupHdr = headerRow.insertCell();
-			groupHdr.textContent = "Group";
-			groupHdr.className = "user_c1";
-			let tokenHdr = headerRow.insertCell();
-			tokenHdr.textContent = "Token";
-			tokenHdr.className = "user_c1";
-			let passwordHdr = headerRow.insertCell();
-			passwordHdr.textContent = "Password";
-			passwordHdr.className = "user_c1";
-			let certsHdr = headerRow.insertCell();
-			certsHdr.textContent = "Certs";
-			certsHdr.className = "user_c1";
-			let deviceTypeHdr = headerRow.insertCell();
-			deviceTypeHdr.textContent = "Device Type";
-			deviceTypeHdr.className = "user_c1";
-
-			document.getElementById("user-table-hdr").appendChild(tablehdr);
+			allUsers = tableArr;
+			renderGroupsOverview();
 
 			let table = document.createElement("table");
-			table.className = "user-table-style";
+			table.className = "users-table";
+			let header = table.createTHead().insertRow();
+			for (let title of ["Name", "Groups", "Token", "Password", "Certs", "Device Type"]) {
+				let th = document.createElement("th");
+				th.textContent = title;
+				header.appendChild(th);
+			}
+			let body = table.createTBody();
 
 			if (tableArr.length == 0) {
-				let no_recs = table.insertRow();
-				no_recs.className = "row-color-nohover row-class";
-
-				let noRecsCell = no_recs.insertCell();
+				let noRecs = body.insertRow();
+				let noRecsCell = noRecs.insertCell();
+				noRecsCell.colSpan = 6;
 				noRecsCell.textContent = "No Records";
-				noRecsCell.className = "user-cell-style-1";
-
-				document.getElementById("user-table").appendChild(table);
-			} else {
-				// removeUsers
-				for (let [index, row] of tableArr.entries()) {
-					let t_row = table.insertRow(index);
-					t_row.className = "row-color-nohover row-class";
-					t_row.setAttribute("data-myID", row.Uid);
-					// 			t_row.onclick = (function() {
-					//     console.log(this.getAttribute("data-myID"));
-					// });
-
-					t_row.onclick = function () {
-						$(this).toggleClass("rowselected");
-						captureClick(this.getAttribute("data-myID"));
-					};
-
-					let nameCell = t_row.insertCell();
-					nameCell.textContent = row.Name;
-					nameCell.className = "user-cell-style-1";
-
-					let groupCell = t_row.insertCell();
-					groupCell.className = "user-cell-style-1";
-					// editing groups shouldn't toggle the row's delete selection
-					groupCell.onclick = (event) => event.stopPropagation();
-					let groupSelect = document.createElement("div");
-					groupSelect.title = "none ticked: Public only";
-					let currentGroups = parseGroups(row.Group);
-					fillGroupSelect(groupSelect, currentGroups);
-					groupSelectors.push({ select: groupSelect, current: currentGroups });
-					let saveGroups = document.createElement("button");
-					saveGroups.className = "btn btn-simple btn-twitter btn-sm";
-					saveGroups.textContent = "Save";
-					saveGroups.onclick = () => saveUserGroups(row.Uid, groupSelect);
-					groupCell.appendChild(groupSelect);
-					groupCell.appendChild(saveGroups);
-
-					let tokenCell = t_row.insertCell();
-					// tokenCell.textContent = row.Token;
-					tokenCell.textContent = "************";
-					tokenCell.className = "user-cell-style-1";
-
-					let passwordCell = t_row.insertCell();
-					passwordCell.textContent = "************";
-					// passwordCell.textContent = row.Password;
-					passwordCell.className = "user-cell-style-1";
-
-					let certsCell = t_row.insertCell();
-					certsCell.textContent = row.Certs;
-					certsCell.className = "user-cell-style-1";
-					
-					let deviceTypeCell = t_row.insertCell();
-					deviceTypeCell.textContent = row.DeviceType;
-					deviceTypeCell.className = "user-cell-style-1";
-					
-
-				}
-
-				document.getElementById("user-table").appendChild(table);
 			}
+
+			for (let row of tableArr) {
+				let t_row = body.insertRow();
+				t_row.className = "row-color-nohover row-class";
+				t_row.setAttribute("data-myID", row.Uid);
+				t_row.onclick = function () {
+					$(this).toggleClass("rowselected");
+					captureClick(this.getAttribute("data-myID"));
+				};
+
+				t_row.insertCell().textContent = row.Name;
+
+				let groupCell = t_row.insertCell();
+				groupCell.className = "groups-cell";
+				// editing groups shouldn't toggle the row's delete selection
+				groupCell.onclick = (event) => event.stopPropagation();
+				let groupSelect = document.createElement("div");
+				groupSelect.title = "none ticked: Public only";
+				let currentGroups = parseGroups(row.Group);
+				fillGroupSelect(groupSelect, currentGroups);
+				groupSelectors.push({ select: groupSelect, current: currentGroups });
+				let saveGroups = document.createElement("button");
+				saveGroups.className = "btn btn-simple btn-twitter btn-sm";
+				saveGroups.textContent = "Save";
+				saveGroups.onclick = () => saveUserGroups(row.Uid, groupSelect);
+				groupCell.appendChild(groupSelect);
+				groupCell.appendChild(saveGroups);
+
+				t_row.insertCell().textContent = "************";
+				t_row.insertCell().textContent = "************";
+				t_row.insertCell().textContent = row.Certs;
+				t_row.insertCell().textContent = row.DeviceType;
+			}
+
+			document.getElementById("user-table").replaceChildren(table);
 		});
 	};
 
