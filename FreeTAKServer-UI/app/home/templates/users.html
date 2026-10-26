@@ -130,6 +130,41 @@
 </div>
 <br /><br />
 <div style="width: 100%; display: grid; padding: 5px; margin: 0 auto; background-color: #27293d">
+	<div class="header-tools" style="justify-self: flex-end; font-size: 20px; padding-right: 20px; color: #278aed">[QUICK-CONNECT QR]</div>
+</div>
+<div style="background-color: #27293d; padding: 16px 20px; color: #fff;">
+	<p style="color: #b5b5b5">Scan with ATAK (Add server, scan QR) or iTAK to enroll a device without typing the password.
+	The code stands in for the password for enrollment only, until it expires. Needs certificate enrollment set up on the Configure page.
+	Pick a user with the QR button in the user table.</p>
+	<div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: center;">
+		<span>User: <strong id="qrUser">none selected</strong></span>
+		<label>App
+			<select id="qrApp" class="form-control" style="display: inline-block; width: auto;">
+				<option value="atak">ATAK / WinTAK</option>
+				<option value="itak">iTAK</option>
+			</select></label>
+		<label>Valid for
+			<select id="qrHours" class="form-control" style="display: inline-block; width: auto;">
+				<option value="1">1 hour</option>
+				<option value="24" selected>24 hours</option>
+				<option value="168">7 days</option>
+			</select></label>
+		<label><input type="checkbox" id="qrOneDevice" checked /> one device only</label>
+		<button class="btn btn-simple btn-twitter" onclick="makeEnrollQR()" style="color: #278aed; border-color: #278aed">Make QR code</button>
+	</div>
+	<div id="qrResult" style="margin-top: 16px; display: none;">
+		<img id="qrImage" alt="quick-connect QR code" style="background: #fff; padding: 8px; max-width: 320px;" />
+		<div id="qrDetails" style="margin-top: 8px; color: #b5b5b5"></div>
+	</div>
+	<div style="margin-top: 16px;">Active codes:</div>
+	<table class="groups-table">
+		<thead><tr><th>User</th><th>Expires (UTC)</th><th>One device</th><th>Used</th><th></th></tr></thead>
+		<tbody id="enrollCodes"></tbody>
+	</table>
+</div>
+
+<br /><br />
+<div style="width: 100%; display: grid; padding: 5px; margin: 0 auto; background-color: #27293d">
 	<div class="header-tools" style="justify-self: flex-end; font-size: 20px; padding-right: 20px; color: #278aed">[GROUPS]</div>
 </div>
 <div class="groups-panel">
@@ -165,6 +200,7 @@
 		if (isAuth === "True") {
 			usersSocket = socket;
 			listenForAdminChanges(socket);
+			listenForEnrollQR(socket);
 			getGroups(socket);
 			getUserInfo(socket);
 			getEventsInfo(socket);
@@ -227,6 +263,73 @@
 			label.appendChild(document.createTextNode(" " + groupLabel(name)));
 			container.appendChild(label);
 		}
+	};
+
+	// quick-connect QR codes
+	var qrUser = null;
+
+	const selectQRUser = (name) => {
+		qrUser = name;
+		document.getElementById("qrUser").textContent = name;
+		document.getElementById("qrResult").style.display = "none";
+		document.getElementById("qrUser").scrollIntoView({ behavior: "smooth", block: "center" });
+	};
+
+	const makeEnrollQR = () => {
+		if (!qrUser) {
+			snackFunction("Pick a user with the QR button in the user table first");
+			return;
+		}
+		usersSocket.emit("createEnrollQR", JSON.stringify({
+			name: qrUser,
+			app: document.getElementById("qrApp").value,
+			hours: Number(document.getElementById("qrHours").value),
+			oneDevice: document.getElementById("qrOneDevice").checked
+		}));
+	};
+
+	const renderEnrollCodes = (codes) => {
+		let tbody = document.getElementById("enrollCodes");
+		tbody.replaceChildren();
+		if (codes.length === 0) {
+			let cell = tbody.insertRow().insertCell();
+			cell.colSpan = 5;
+			cell.textContent = "none";
+		}
+		for (let code of codes) {
+			let row = tbody.insertRow();
+			row.insertCell().textContent = code.username;
+			row.insertCell().textContent = code.expires.replace("T", " ");
+			row.insertCell().textContent = code.one_device ? "yes" : "no";
+			row.insertCell().textContent = code.used ? code.used.replace("T", " ") : "not yet";
+			let revoke = document.createElement("a");
+			revoke.href = "#";
+			revoke.textContent = "revoke";
+			revoke.onclick = (event) => {
+				event.preventDefault();
+				usersSocket.emit("revokeEnrollCode", JSON.stringify({ id: code.id }));
+			};
+			row.insertCell().appendChild(revoke);
+		}
+	};
+
+	const listenForEnrollQR = (socket) => {
+		socket.on("enrollQR", function (data) {
+			let result = JSON.parse(data);
+			if (result.error) {
+				snackFunction(result.error);
+				return;
+			}
+			document.getElementById("qrImage").src = result.image;
+			document.getElementById("qrDetails").textContent =
+				`${result.app === "itak" ? "iTAK" : "ATAK"} code for ${result.username}, valid until ${result.expires.replace("T", " ")} UTC` +
+				(result.oneDevice ? ", one device" : ", any number of devices");
+			document.getElementById("qrResult").style.display = "block";
+		});
+		socket.on("enrollCodesUpdate", function (data) {
+			renderEnrollCodes(JSON.parse(data));
+		});
+		socket.emit("enrollCodes");
 	};
 
 	const listenForAdminChanges = (socket) => {
@@ -322,7 +425,7 @@
 			let table = document.createElement("table");
 			table.className = "users-table";
 			let header = table.createTHead().insertRow();
-			for (let title of ["Name", "Groups", "Web UI admin", "Token", "Password", "Certs", "Device Type"]) {
+			for (let title of ["Name", "Groups", "Web UI admin", "Token", "Password", "Certs", "Device Type", "QR"]) {
 				let th = document.createElement("th");
 				th.textContent = title;
 				header.appendChild(th);
@@ -332,7 +435,7 @@
 			if (tableArr.length == 0) {
 				let noRecs = body.insertRow();
 				let noRecsCell = noRecs.insertCell();
-				noRecsCell.colSpan = 7;
+				noRecsCell.colSpan = 8;
 				noRecsCell.textContent = "No Records";
 			}
 
@@ -380,6 +483,14 @@
 				t_row.insertCell().textContent = "************";
 				t_row.insertCell().textContent = row.Certs;
 				t_row.insertCell().textContent = row.DeviceType;
+
+				let qrCell = t_row.insertCell();
+				qrCell.onclick = (event) => event.stopPropagation();
+				let qrButton = document.createElement("button");
+				qrButton.className = "btn btn-simple btn-twitter btn-sm";
+				qrButton.textContent = "QR";
+				qrButton.onclick = () => selectQRUser(row.Name);
+				qrCell.appendChild(qrButton);
 			}
 
 			document.getElementById("user-table").replaceChildren(table);
