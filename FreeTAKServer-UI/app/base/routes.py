@@ -47,7 +47,12 @@ def login():
         # FTS answers 200 {uid} for admins, 403 for device-only accounts and
         # 401 for wrong credentials; anything else must not sign anyone in
         if user.status_code == 403:
-            return render_template('login/login.html', msg='This account has no web UI access', form=login_form)
+            # "this account has no web UI access" or "this account is disabled"
+            try:
+                reason = user.json().get("message") or "this account has no web UI access"
+            except ValueError:
+                reason = "this account has no web UI access"
+            return render_template('login/login.html', msg=reason[:1].upper() + reason[1:], form=login_form)
         try:
             user = user.json() if user.status_code == 200 else None
         except ValueError:

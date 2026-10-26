@@ -200,6 +200,7 @@
 		if (isAuth === "True") {
 			usersSocket = socket;
 			listenForAdminChanges(socket);
+			listenForDisabledChanges(socket);
 			listenForEnrollQR(socket);
 			getGroups(socket);
 			getUserInfo(socket);
@@ -332,6 +333,19 @@
 		socket.emit("enrollCodes");
 	};
 
+	const listenForDisabledChanges = (socket) => {
+		socket.on("userDisabledUpdate", function (data) {
+			let result = JSON.parse(data);
+			// show the stored state, e.g. when disabling the last admin was refused
+			let entry = enabledBoxes[result.name];
+			if (entry) {
+				entry.box.checked = !result.disabled;
+				entry.row.style.opacity = result.disabled ? "0.5" : "";
+			}
+			snackFunction(result.error || `${result.name} ${result.disabled ? "disabled" : "enabled"}`);
+		});
+	};
+
 	const listenForAdminChanges = (socket) => {
 		socket.on("userAdminUpdate", function (data) {
 			let result = JSON.parse(data);
@@ -362,6 +376,7 @@
 
 	var allUsers = [];
 	var adminBoxes = {};
+	var enabledBoxes = {};
 	var definedGroups = [];
 
 	// one row per group with its members, computed from the user list
@@ -425,7 +440,7 @@
 			let table = document.createElement("table");
 			table.className = "users-table";
 			let header = table.createTHead().insertRow();
-			for (let title of ["Name", "Groups", "Web UI admin", "Token", "Password", "Certs", "Device Type", "QR"]) {
+			for (let title of ["Name", "Enabled", "Groups", "Web UI admin", "Token", "Password", "Certs", "Device Type", "QR"]) {
 				let th = document.createElement("th");
 				th.textContent = title;
 				header.appendChild(th);
@@ -435,7 +450,7 @@
 			if (tableArr.length == 0) {
 				let noRecs = body.insertRow();
 				let noRecsCell = noRecs.insertCell();
-				noRecsCell.colSpan = 8;
+				noRecsCell.colSpan = 9;
 				noRecsCell.textContent = "No Records";
 			}
 
@@ -449,6 +464,27 @@
 				};
 
 				t_row.insertCell().textContent = row.Name;
+				if (row.Disabled === true) {
+					t_row.style.opacity = "0.5";
+				}
+
+				// a disabled user can't sign in, enroll or connect with their certificates
+				let enabledCell = t_row.insertCell();
+				enabledCell.onclick = (event) => event.stopPropagation();
+				let enabledBox = document.createElement("input");
+				enabledBox.type = "checkbox";
+				enabledBox.checked = row.Disabled !== true;
+				enabledBox.title = "unticked: can't sign in, enroll or connect";
+				enabledBox.onchange = () => {
+					let disabling = !enabledBox.checked;
+					if (disabling && !confirm(`Disable ${row.Name}? Their devices are disconnected and they can't sign in or enroll until re-enabled.`)) {
+						enabledBox.checked = true;
+						return;
+					}
+					usersSocket.emit("setUserDisabled", JSON.stringify({ name: row.Name, disabled: disabling }));
+				};
+				enabledBoxes[row.Name] = { box: enabledBox, row: t_row };
+				enabledCell.appendChild(enabledBox);
 
 				let groupCell = t_row.insertCell();
 				groupCell.className = "groups-cell";
