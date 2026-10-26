@@ -44,13 +44,17 @@ def login():
             user = requests.get(f"{app.config['PROTOCOL']}://{app.config['IP']}:{app.config['PORT']}/AuthenticateUser", params={"username": username, "password": password}, headers={"Authorization": f"{app.config['APIKEY']}"})
         except ConnectionError:
             return render_template('login/login.html', msg=f'FTS Server is not reachable at {app.config.get("IP", "IP NOT SET!")}', form=login_form)
+        # FTS answers 200 {uid} for admins, 403 for device-only accounts and
+        # 401 for wrong credentials; anything else must not sign anyone in
+        if user.status_code == 403:
+            return render_template('login/login.html', msg='This account has no web UI access', form=login_form)
         try:
-            user = user.json()
-        except:
-            return render_template('login/login.html', msg='Wrong user or password', form=login_form)
-        
+            user = user.json() if user.status_code == 200 else None
+        except ValueError:
+            user = None
+
         # Check the password
-        if user:
+        if user and user.get("uid"):
             user = User(uid = user["uid"])
             db.session.add(user)
             db.session.commit()
@@ -77,6 +81,7 @@ def logout():
     return redirect(url_for('base_blueprint.login'))
 
 @blueprint.route('/shutdown')
+@login_required
 def shutdown():
     func = request.environ.get('werkzeug.server.shutdown')
     if func is None:

@@ -164,6 +164,7 @@
 
 		if (isAuth === "True") {
 			usersSocket = socket;
+			listenForAdminChanges(socket);
 			getGroups(socket);
 			getUserInfo(socket);
 			getEventsInfo(socket);
@@ -228,6 +229,17 @@
 		}
 	};
 
+	const listenForAdminChanges = (socket) => {
+		socket.on("userAdminUpdate", function (data) {
+			let result = JSON.parse(data);
+			// show the stored state, e.g. when removing the last admin was refused
+			if (adminBoxes[result.name]) {
+				adminBoxes[result.name].checked = result.admin;
+			}
+			snackFunction(result.error || `${result.name} ${result.admin ? "can" : "can no longer"} sign in to the web UI`);
+		});
+	};
+
 	const getGroups = (socket) => {
 		socket.emit("groupsStatus");
 		socket.on("groupsStatusUpdate", function (data) {
@@ -246,6 +258,7 @@
 	};
 
 	var allUsers = [];
+	var adminBoxes = {};
 	var definedGroups = [];
 
 	// one row per group with its members, computed from the user list
@@ -309,7 +322,7 @@
 			let table = document.createElement("table");
 			table.className = "users-table";
 			let header = table.createTHead().insertRow();
-			for (let title of ["Name", "Groups", "Token", "Password", "Certs", "Device Type"]) {
+			for (let title of ["Name", "Groups", "Web UI admin", "Token", "Password", "Certs", "Device Type"]) {
 				let th = document.createElement("th");
 				th.textContent = title;
 				header.appendChild(th);
@@ -319,7 +332,7 @@
 			if (tableArr.length == 0) {
 				let noRecs = body.insertRow();
 				let noRecsCell = noRecs.insertCell();
-				noRecsCell.colSpan = 6;
+				noRecsCell.colSpan = 7;
 				noRecsCell.textContent = "No Records";
 			}
 
@@ -349,6 +362,19 @@
 				saveGroups.onclick = () => saveUserGroups(row.Uid, groupSelect);
 				groupCell.appendChild(groupSelect);
 				groupCell.appendChild(saveGroups);
+
+				// only admins can sign in to this UI; other users are device-only accounts
+				let adminCell = t_row.insertCell();
+				adminCell.onclick = (event) => event.stopPropagation();
+				let adminBox = document.createElement("input");
+				adminBox.type = "checkbox";
+				adminBox.checked = row.Admin === true;
+				adminBox.title = "can sign in to the web UI";
+				adminBox.onchange = () => {
+					usersSocket.emit("setUserAdmin", JSON.stringify({ name: row.Name, admin: adminBox.checked }));
+				};
+				adminBoxes[row.Name] = adminBox;
+				adminCell.appendChild(adminBox);
 
 				t_row.insertCell().textContent = "************";
 				t_row.insertCell().textContent = "************";
