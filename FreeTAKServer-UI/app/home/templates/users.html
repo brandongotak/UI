@@ -266,10 +266,11 @@
 		}
 	};
 
-	// rebuild a user's connection package (e.g. after it was deleted) and download it
+	// rebuild a user's connection package (e.g. after it was deleted) and download it;
+	// the package connects to the address this page is viewed at
 	const rebuildPackage = (uid, name, fileName) => {
 		snackFunction(`Rebuilding ${name}'s package...`);
-		fetch(`{{protocol}}://{{ip}}:{{port}}/UserPackage?uid=${encodeURIComponent(uid)}`, {
+		fetch(`{{protocol}}://{{ip}}:{{port}}/UserPackage?uid=${encodeURIComponent(uid)}&host=${encodeURIComponent(location.hostname)}`, {
 			headers: { Authorization: "{{apikey | safe}}" },
 		})
 			.then(async (response) => {

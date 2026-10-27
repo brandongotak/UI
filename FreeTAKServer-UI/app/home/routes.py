@@ -280,7 +280,9 @@ def portal_qr():
 @login_required
 def portal_package():
     try:
-        reply = requests.get(fts_url("/UserPackage"), params={"uid": current_user.uid}, headers=fts_headers(), timeout=60)
+        # the package connects to the address the portal is viewed at
+        reply = requests.get(fts_url("/UserPackage"), params={"uid": current_user.uid, "host": request.host.rsplit(":", 1)[0]},
+                             headers=fts_headers(), timeout=60)
     except Exception:
         return {"message": "FTS is not reachable"}, 502
     if reply.status_code != 200:
