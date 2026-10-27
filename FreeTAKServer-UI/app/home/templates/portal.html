@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>FreeTAKServer - My account</title>
+	<link href="/static/assets/css/black-dashboard.min.css" rel="stylesheet" />
+	<style>
+		body { background-color: #1e1e2f; color: #fff; }
+		.portal { max-width: 900px; margin: 0 auto; padding: 24px 16px; }
+		.portal h3 { color: #278aed; margin: 0; }
+		.portal .card { background-color: #27293d; padding: 20px; margin-bottom: 20px; }
+		.portal .card h4 { color: #278aed; margin-top: 0; }
+		.portal .muted { color: #b5b5b5; }
+		.portal .row-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+		.portal .btn-portal { color: #278aed; border: 1px solid #278aed; background: transparent; }
+		.portal input.form-control { max-width: 320px; margin-bottom: 10px; }
+		.portal .message { margin-top: 10px; }
+		.portal .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+	</style>
+</head>
+<body>
+<div class="portal">
+	<div class="header">
+		<h3>[MY ACCOUNT]</h3>
+		<div>
+			{% if is_admin %}<a href="/index" class="btn btn-sm btn-portal">Admin pages</a>{% endif %}
+			<a href="/logout" class="btn btn-sm btn-portal">Log out</a>
+		</div>
+	</div>
+
+	{% if account.message %}
+	<div class="card"><span class="text-danger">{{ account.message }}</span></div>
+	{% else %}
+	<div class="card">
+		<h4>{{ account.name }}</h4>
+		<div>Groups (channels):
+			{% for group in account.groups %}{{ "Public" if group == "__ANON__" else group }}{% if group not in account.activeGroups %} (switched off){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+		</div>
+		<div class="muted">
+			{% if account.groupRoutingEnabled %}You see traffic from devices that share one of your active groups; switch channels in ATAK.
+			{% else %}Group routing is off on this server: everyone sees everyone.{% endif %}
+		</div>
+	</div>
+
+	<div class="card">
+		<h4>Connect a device</h4>
+		{% if account.enrollmentConfigured %}
+		<p class="muted">Make a QR code and scan it in ATAK (add a server, scan QR) or iTAK. It works for one device and for 24 hours.</p>
+		<div class="row-actions">
+			<select id="qrApp" class="form-control" style="width: auto;">
+				<option value="atak">ATAK / WinTAK</option>
+				<option value="itak">iTAK</option>
+			</select>
+			<button class="btn btn-portal" onclick="makeQR()">Make QR code</button>
+		</div>
+		<div id="qrResult" style="display: none; margin-top: 16px;">
+			<img id="qrImage" alt="quick-connect QR code" style="background: #fff; padding: 8px; max-width: 320px;" />
+			<div id="qrDetails" class="muted" style="margin-top: 8px;"></div>
+		</div>
+		{% else %}
+		<p class="muted">QR enrollment isn't set up on this server; ask an administrator.</p>
+		{% endif %}
+		<div id="qrMessage" class="message"></div>
+	</div>
+
+	{% if account.hasPackage %}
+	<div class="card">
+		<h4>My connection package</h4>
+		<p class="muted">Import into ATAK or WinTAK to connect with your certificate.</p>
+		<a href="/portal/package" class="btn btn-portal">Download package</a>
+	</div>
+	{% endif %}
+
+	<div class="card">
+		<h4>Change password</h4>
+		<p class="muted">Also the password for enrolling devices with your username.</p>
+		<input type="password" class="form-control" id="currentPassword" placeholder="Current password" autocomplete="current-password" />
+		<input type="password" class="form-control" id="newPassword" placeholder="New password (8-30 characters)" autocomplete="new-password" />
+		<input type="password" class="form-control" id="newPasswordAgain" placeholder="New password again" autocomplete="new-password" />
+		<button class="btn btn-portal" onclick="changePassword()">Change password</button>
+		<div id="passwordMessage" class="message"></div>
+	</div>
+	{% endif %}
+</div>
+
+<script>
+	const postJSON = (url, body) =>
+		fetch(url, {
+			method: "POST",
+			credentials: "same-origin",
+			headers: { "Content-Type": "application/json", "X-Portal": "1" },
+			body: JSON.stringify(body),
+		}).then(async (response) => ({ ok: response.ok, body: await response.json().catch(() => ({})) }));
+
+	const showMessage = (id, text, ok) => {
+		let element = document.getElementById(id);
+		element.textContent = text;
+		element.className = "message " + (ok ? "text-success" : "text-danger");
+	};
+
+	const makeQR = () => {
+		showMessage("qrMessage", "", true);
+		postJSON("/portal/qr", { app: document.getElementById("qrApp").value }).then((result) => {
+			if (!result.ok) {
+				showMessage("qrMessage", result.body.message || "Making the QR code failed", false);
+				return;
+			}
+			document.getElementById("qrImage").src = result.body.image;
+			document.getElementById("qrDetails").textContent =
+				`Valid until ${result.body.expires.replace("T", " ")} UTC, for one device.`;
+			document.getElementById("qrResult").style.display = "block";
+		});
+	};
+
+	const changePassword = () => {
+		let newPassword = document.getElementById("newPassword").value;
+		if (newPassword !== document.getElementById("newPasswordAgain").value) {
+			showMessage("passwordMessage", "The new passwords don't match", false);
+			return;
+		}
+		postJSON("/portal/password", {
+			current: document.getElementById("currentPassword").value,
+			new: newPassword,
+		}).then((result) => {
+			showMessage("passwordMessage", result.body.message || (result.ok ? "Password changed" : "Changing the password failed"), result.ok);
+			if (result.ok) {
+				for (let id of ["currentPassword", "newPassword", "newPasswordAgain"]) {
+					document.getElementById(id).value = "";
+				}
+			}
+		});
+	};
+</script>
+</body>
+</html>

@@ -4,7 +4,7 @@ License: MIT
 Copyright (c) 2019 - present AppSeed.us
 """
 
-from flask import jsonify, render_template, redirect, request, url_for
+from flask import jsonify, render_template, redirect, request, session, url_for
 from flask_login import (
     current_user,
     login_required,
@@ -41,7 +41,8 @@ def login():
 
         # Locate user
         try:
-            user = requests.get(f"{app.config['PROTOCOL']}://{app.config['IP']}:{app.config['PORT']}/AuthenticateUser", params={"username": username, "password": password}, headers={"Authorization": f"{app.config['APIKEY']}"})
+            # portal=1: non-admins may sign in too, to the user portal only
+            user = requests.get(f"{app.config['PROTOCOL']}://{app.config['IP']}:{app.config['PORT']}/AuthenticateUser", params={"username": username, "password": password, "portal": "1"}, headers={"Authorization": f"{app.config['APIKEY']}"})
         except ConnectionError:
             return render_template('login/login.html', msg=f'FTS Server is not reachable at {app.config.get("IP", "IP NOT SET!")}', form=login_form)
         # FTS answers 200 {uid} for admins, 403 for device-only accounts and
@@ -60,12 +61,16 @@ def login():
 
         # Check the password
         if user and user.get("uid"):
+            # FTS versions without the user portal only accept admins and don't say so
+            user_admin = user.get("admin", True) is True
             user = User(uid = user["uid"])
             db.session.add(user)
             db.session.commit()
             login_user(user)
+            # admin pages embed FTS's API and websocket keys, so only admins get them
+            session["is_admin"] = bool(user_admin)
             z = current_user
-            url = url_for('base_blueprint.route_default')
+            url = url_for('base_blueprint.route_default') if user_admin else url_for('home_blueprint.portal')
             new_redr = redirect(url)
             return new_redr
 
@@ -79,6 +84,7 @@ def login():
 
 @blueprint.route('/logout')
 def logout():
+    session.pop("is_admin", None)
     db.session.delete(current_user)
     db.session.commit()
     logout_user()
