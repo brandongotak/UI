@@ -173,6 +173,12 @@ def usersApi():
     return render_template('users.html', segment="users", 
     websocketkey=app.config['WEBSOCKETKEY'], apikey=app.config['APIKEY'], port=app.config['PORT'], protocol=app.config['PROTOCOL'], ip=app.config['IP'])     
       
+@blueprint.route('/video')
+@admin_required
+def videoApi():
+    return render_template('video.html', segment="video",
+    websocketkey=app.config['WEBSOCKETKEY'], apikey=app.config['APIKEY'], port=app.config['PORT'], protocol=app.config['PROTOCOL'], ip=app.config['IP'])
+
 @blueprint.route('/about')
 @admin_required
 def aboutApi():

@@ -1,0 +1,321 @@
+{% extends "base-site.html" %} {% block title %} Video {% endblock %}
+
+<!-- Specific Page CSS goes HERE  -->
+{% block stylesheets %}{% endblock stylesheets %} {% block content %}
+
+<style>
+	.video-table {
+		width: 100%;
+		border-collapse: collapse;
+	}
+
+	.video-table th {
+		background-color: #27293d;
+		color: #b5b5b5;
+		font-size: 16px;
+		font-weight: 600;
+		text-align: left;
+		padding: 12px 14px;
+	}
+
+	.video-table td {
+		color: #fff;
+		opacity: 0.85;
+		padding: 12px 14px;
+		vertical-align: top;
+		border-top: 1px solid #34364a;
+		word-break: break-all;
+	}
+
+	.video-table td.actions {
+		white-space: nowrap;
+		word-break: normal;
+	}
+
+	.video-table .muted,
+	.video-page .muted {
+		color: #b5b5b5;
+	}
+
+	.video-page .btn-video {
+		color: #278aed;
+		border: 1px solid #278aed;
+		background: transparent;
+		margin: 0 6px 6px 0;
+	}
+
+	.video-page .btn-video-danger {
+		color: #fd5d93;
+		border: 1px solid #fd5d93;
+		background: transparent;
+		margin: 0 6px 6px 0;
+	}
+
+	.video-page .section-title {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		font-size: 20px;
+		color: #278aed;
+		padding: 0 16px 8px 16px;
+	}
+
+	.video-page .add-feed {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		padding: 8px 16px;
+	}
+</style>
+
+<div class="video-page">
+	<div class="card" style="padding: 16px;">
+		<div class="section-title">
+			<span>[LIVE STREAMS]</span>
+			<button class="btn btn-sm btn-video" onclick="refresh()">Refresh</button>
+		</div>
+		<p style="padding: 0 16px;" class="muted">Streams on the video server (MediaMTX). Publish to
+			<code>rtsp://<span class="server-host"></span>:8554/&lt;name&gt;</code> or
+			<code>rtmp://<span class="server-host"></span>/&lt;name&gt;</code>; devices play them over RTSP on port 8554.</p>
+		<div style="padding: 0 16px; display: flex; align-items: center; gap: 10px;">
+			<input type="checkbox" id="autoAddSwitch" onclick="toggleAutoAdd(event)" />
+			<label for="autoAddSwitch" style="margin: 0;">Make new streams feeds automatically (checked every 2 minutes)</label>
+		</div>
+		<div id="streamsError" class="text-danger" style="padding: 8px 16px;"></div>
+		<div style="padding: 8px 16px; overflow-x: auto;">
+			<table class="video-table">
+				<thead>
+					<tr><th>Name</th><th>Status</th><th>Source</th><th>Viewers</th><th>Codecs</th><th>Play URL</th><th></th></tr>
+				</thead>
+				<tbody id="streamsBody"><tr><td colspan="7" class="muted">loading...</td></tr></tbody>
+			</table>
+		</div>
+	</div>
+
+	<div class="card" style="padding: 16px;">
+		<div class="section-title"><span>[VIDEO FEEDS]</span></div>
+		<p style="padding: 0 16px;" class="muted">Feeds are sent to connected devices and listed in ATAK's Videos tool (Download).
+			Deleting a feed removes it from connected devices too.</p>
+		<div style="padding: 8px 16px; overflow-x: auto;">
+			<table class="video-table">
+				<thead>
+					<tr><th>Name</th><th>URL</th><th>Added by</th><th>Added</th><th></th></tr>
+				</thead>
+				<tbody id="feedsBody"><tr><td colspan="5" class="muted">loading...</td></tr></tbody>
+			</table>
+		</div>
+		<div style="padding: 8px 16px 0 16px;">Add a feed (IP camera, drone, any stream URL):</div>
+		<div class="add-feed">
+			<input type="text" class="form-control" id="newFeedAlias" maxlength="100" placeholder="Name" style="max-width: 220px;" />
+			<input type="text" class="form-control" id="newFeedUrl" maxlength="500" placeholder="rtsp://camera.local:554/stream1" style="max-width: 420px;" />
+			<button class="btn btn-video" onclick="addFeed()">Add feed</button>
+		</div>
+	</div>
+</div>
+
+<div id="snackbar">&nbsp;</div>
+
+{% endblock content %}
+
+<!-- Specific Page JS goes HERE  -->
+{% block javascripts %}
+<script>
+	var socket = io.connect(`{{protocol}}://{{ip}}:{{port}}`);
+
+	const authenticate = (socket) => {
+		socket.emit("authenticate", JSON.stringify({ Authenticate: "{{websocketkey | safe}}" }));
+		return new Promise(function (resolve, reject) {
+			socket.on("authentication", function (data) {
+				JSON.parse(data).successful === "True" ? resolve("True") : reject("False");
+			});
+		});
+	};
+
+	function snackFunction(message) {
+		let x = document.getElementById("snackbar");
+		x.textContent = message;
+		x.className = "show";
+		setTimeout(function () {
+			x.className = x.className.replace("show", "");
+		}, 3000);
+	}
+
+	const cell = (text, className) => {
+		let td = document.createElement("td");
+		td.textContent = text;
+		if (className) {
+			td.className = className;
+		}
+		return td;
+	};
+
+	const button = (label, danger, onclick) => {
+		let b = document.createElement("button");
+		b.className = "btn btn-sm " + (danger ? "btn-video-danger" : "btn-video");
+		b.textContent = label;
+		b.onclick = onclick;
+		return b;
+	};
+
+	const copyButton = (text) => button("Copy URL", false, () => {
+		navigator.clipboard.writeText(text).then(() => snackFunction("Copied"), () => snackFunction(text));
+	});
+
+	const formatBytes = (bytes) => {
+		if (!bytes) {
+			return "";
+		}
+		let units = ["B", "KB", "MB", "GB", "TB"];
+		let i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+		return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]} received`;
+	};
+
+	const formatTime = (iso) => (iso ? new Date(iso).toLocaleString() : "");
+
+	const SOURCES = {
+		rtspSession: "RTSP publisher", rtspsSession: "RTSPS publisher", rtmpConn: "RTMP publisher",
+		rtmpsConn: "RTMPS publisher", srtConn: "SRT publisher", webRTCSession: "WebRTC publisher",
+		rtspSource: "pulled over RTSP", rtmpSource: "pulled over RTMP", hlsSource: "pulled over HLS",
+		srtSource: "pulled over SRT", webRTCSource: "pulled over WebRTC", rpiCameraSource: "Raspberry Pi camera",
+		mpegtsSource: "MPEG-TS", rtpSource: "RTP", redirect: "redirect",
+	};
+
+	const renderStreams = (status) => {
+		let body = document.getElementById("streamsBody");
+		body.replaceChildren();
+		document.getElementById("streamsError").textContent = status.streamsError || "";
+		if (status.streams.length === 0) {
+			let row = document.createElement("tr");
+			row.appendChild(cell(status.streamsError ? "" : "No streams. Start publishing to see them here.", "muted"));
+			row.firstChild.colSpan = 7;
+			body.appendChild(row);
+			return;
+		}
+		for (let stream of status.streams) {
+			let row = document.createElement("tr");
+			row.appendChild(cell(stream.name));
+			let state = cell(stream.online ? "live" : "waiting", stream.online ? "text-success" : "muted");
+			if (stream.since) {
+				state.appendChild(document.createElement("br"));
+				let since = document.createElement("span");
+				since.className = "muted";
+				since.textContent = "since " + formatTime(stream.since);
+				state.appendChild(since);
+			}
+			row.appendChild(state);
+			let source = cell(SOURCES[stream.sourceType] || stream.sourceType || "none");
+			if (stream.inboundBytes) {
+				source.appendChild(document.createElement("br"));
+				let bytes = document.createElement("span");
+				bytes.className = "muted";
+				bytes.textContent = formatBytes(stream.inboundBytes);
+				source.appendChild(bytes);
+			}
+			row.appendChild(source);
+			row.appendChild(cell(String(stream.readers)));
+			row.appendChild(cell(stream.tracks.join(", ")));
+			row.appendChild(cell(stream.url));
+			let actions = cell("", "actions");
+			actions.appendChild(copyButton(stream.url));
+			if (stream.feedUid) {
+				let note = document.createElement("span");
+				note.className = "muted";
+				note.textContent = "is a feed ";
+				actions.appendChild(note);
+			} else {
+				actions.appendChild(button("Make feed", false, () => {
+					let alias = prompt("Feed name shown on devices", stream.name);
+					if (alias !== null) {
+						socket.emit("addVideoFeed", JSON.stringify({ stream: stream.name, alias: alias }));
+					}
+				}));
+			}
+			if (stream.kickable) {
+				actions.appendChild(button("Disconnect", true, () => {
+					if (confirm(`Disconnect whoever is publishing "${stream.name}"? They can reconnect unless you change their password or block them.`)) {
+						socket.emit("kickVideoStream", JSON.stringify({ name: stream.name }));
+					}
+				}));
+			}
+			row.appendChild(actions);
+			body.appendChild(row);
+		}
+	};
+
+	const ADDED_BY = { manual: "admin", mediamtx: "automatic", device: "a device" };
+
+	const renderFeeds = (status) => {
+		let body = document.getElementById("feedsBody");
+		body.replaceChildren();
+		if (status.feeds.length === 0) {
+			let row = document.createElement("tr");
+			row.appendChild(cell("No feeds yet.", "muted"));
+			row.firstChild.colSpan = 5;
+			body.appendChild(row);
+			return;
+		}
+		for (let feed of status.feeds) {
+			let row = document.createElement("tr");
+			row.appendChild(cell(feed.alias));
+			row.appendChild(cell(feed.url));
+			row.appendChild(cell(ADDED_BY[feed.source] || feed.source));
+			row.appendChild(cell(formatTime(feed.created)));
+			let actions = cell("", "actions");
+			actions.appendChild(copyButton(feed.url));
+			actions.appendChild(button("Send to devices", false, () => {
+				socket.emit("resendVideoFeed", JSON.stringify({ uid: feed.uid }));
+			}));
+			actions.appendChild(button("Delete", true, () => {
+				let question = `Delete feed "${feed.alias}" and remove it from connected devices?`;
+				if (feed.path) {
+					question += " It won't be added automatically again; use Make feed to bring it back.";
+				}
+				if (confirm(question)) {
+					socket.emit("removeVideoFeed", JSON.stringify({ uid: feed.uid }));
+				}
+			}));
+			row.appendChild(actions);
+			body.appendChild(row);
+		}
+	};
+
+	socket.on("videoStatusUpdate", function (data) {
+		let status = JSON.parse(data);
+		document.getElementById("autoAddSwitch").checked = status.autoAdd;
+		renderStreams(status);
+		renderFeeds(status);
+		if (status.error) {
+			snackFunction(status.error);
+		} else if (status.message) {
+			snackFunction(status.message);
+		}
+	});
+
+	const refresh = () => socket.emit("videoStatus");
+
+	const addFeed = () => {
+		let alias = document.getElementById("newFeedAlias").value.trim();
+		let url = document.getElementById("newFeedUrl").value.trim();
+		if (url === "") {
+			snackFunction("Enter the stream URL");
+			return;
+		}
+		socket.emit("addVideoFeed", JSON.stringify({ alias: alias, url: url }));
+		document.getElementById("newFeedAlias").value = "";
+		document.getElementById("newFeedUrl").value = "";
+	};
+
+	const toggleAutoAdd = (event) => {
+		socket.emit("setVideoAutoAdd", JSON.stringify({ enabled: event.target.checked }));
+	};
+
+	// the address the admin reached the UI on is the one publishers use too
+	document.querySelectorAll(".server-host").forEach((element) => (element.textContent = location.hostname));
+
+	authenticate(socket).then(() => {
+		refresh();
+		// keep viewer counts and live status current
+		setInterval(refresh, 15000);
+	});
+</script>
+{% endblock javascripts %}
