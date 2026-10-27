@@ -266,6 +266,32 @@
 		}
 	};
 
+	// rebuild a user's connection package (e.g. after it was deleted) and download it
+	const rebuildPackage = (uid, name, fileName) => {
+		snackFunction(`Rebuilding ${name}'s package...`);
+		fetch(`{{protocol}}://{{ip}}:{{port}}/UserPackage?uid=${encodeURIComponent(uid)}`, {
+			headers: { Authorization: "{{apikey | safe}}" },
+		})
+			.then(async (response) => {
+				if (!response.ok) {
+					let body = await response.json().catch(() => ({}));
+					throw new Error(body.message || `HTTP ${response.status}`);
+				}
+				return response.blob();
+			})
+			.then((blob) => {
+				let link = document.createElement("a");
+				link.href = URL.createObjectURL(blob);
+				link.download = fileName;
+				document.body.appendChild(link);
+				link.click();
+				link.remove();
+				setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+				snackFunction(`${name}'s package rebuilt`);
+			})
+			.catch((error) => snackFunction(`Rebuilding the package failed: ${error.message}`));
+	};
+
 	// quick-connect QR codes
 	var qrUser = null;
 
@@ -440,7 +466,7 @@
 			let table = document.createElement("table");
 			table.className = "users-table";
 			let header = table.createTHead().insertRow();
-			for (let title of ["Name", "Enabled", "Groups", "Web UI admin", "Token", "Password", "Certs", "Device Type", "QR"]) {
+			for (let title of ["Name", "Enabled", "Groups", "Web UI admin", "Token", "Password", "Certs", "Device Type", "Connect"]) {
 				let th = document.createElement("th");
 				th.textContent = title;
 				header.appendChild(th);
@@ -527,6 +553,15 @@
 				qrButton.textContent = "QR";
 				qrButton.onclick = () => selectQRUser(row.Name);
 				qrCell.appendChild(qrButton);
+				// users created with certificates can get their connection package rebuilt
+				if (row.Certs && String(row.Certs).endsWith(".zip")) {
+					let packageButton = document.createElement("button");
+					packageButton.className = "btn btn-simple btn-twitter btn-sm";
+					packageButton.textContent = "Package";
+					packageButton.title = "rebuild and download this user's connection package";
+					packageButton.onclick = () => rebuildPackage(row.Uid, row.Name, row.Certs);
+					qrCell.appendChild(packageButton);
+				}
 			}
 
 			document.getElementById("user-table").replaceChildren(table);
