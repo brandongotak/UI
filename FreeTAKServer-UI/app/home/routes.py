@@ -18,10 +18,12 @@ from app.base.models import User
 from app import db
 from requests.exceptions import ConnectionError
 import json
+import os
 import subprocess
 
 # installed by the FreeTAKHub installer; the UI runs as root on the FTS host
 FTS_UPDATE = "/usr/local/sbin/fts-update"
+VIDEO_SERVER_UPDATE = "/usr/local/sbin/mediamtx-update"
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -47,13 +49,16 @@ def admin_required(view):
         return view(*args, **kwargs)
     return wrapper
 
-def run_fts_update(*args):
-    """call the fts-update helper, which prints JSON"""
+def run_update_helper(helper, *args):
+    """call an update helper installed by the installer, which prints JSON"""
     try:
-        result = subprocess.run([FTS_UPDATE, *args], capture_output=True, text=True, timeout=60)
+        result = subprocess.run([helper, *args], capture_output=True, text=True, timeout=60)
         return json.loads(result.stdout)
     except (OSError, ValueError, subprocess.TimeoutExpired) as e:
-        return {"error": f"fts-update is not available: {e}"}
+        return {"error": f"{os.path.basename(helper)} is not available: {e}"}
+
+def run_fts_update(*args):
+    return run_update_helper(FTS_UPDATE, *args)
 
 @blueprint.route('/update/status')
 @admin_required
@@ -68,6 +73,23 @@ def update_start():
     if request.headers.get("X-FTS-Update") != "1":
         return {"error": "missing X-FTS-Update header"}, 400
     return run_fts_update("start", *(["--rollback"] if request.args.get("rollback") == "1" else []))
+
+@blueprint.route('/video-server/status')
+@admin_required
+def video_server_status():
+    status = run_update_helper(VIDEO_SERVER_UPDATE, "status")
+    if "error" in status and not os.path.exists(VIDEO_SERVER_UPDATE):
+        status["error"] = "the video server updater isn't installed yet; run Server Update once to add it"
+    return status
+
+@blueprint.route('/video-server/update', methods=['POST'])
+@admin_required
+def video_server_update():
+    # same cross-site protection as /update/start
+    if request.headers.get("X-FTS-Update") != "1":
+        return {"error": "missing X-FTS-Update header"}, 400
+    return run_update_helper(VIDEO_SERVER_UPDATE, "start",
+                             *(["--rollback"] if request.args.get("rollback") == "1" else []))
 
 @blueprint.route('/index')
 @admin_required

@@ -70,6 +70,22 @@
 
 <div class="video-page">
 	<div class="card" style="padding: 16px;">
+		<div class="section-title"><span>[VIDEO SERVER]</span></div>
+		<div style="padding: 0 16px;">
+			<div>MediaMTX: <span id="videoServerVersion">checking...</span></div>
+			<div>Service: <span id="videoServerService">checking...</span></div>
+			<div>Update: <span id="videoServerState">checking...</span></div>
+			<p class="muted" style="margin-top: 8px;">Updates only the video server; FreeTAKServer keeps running. Streams
+				drop for a few seconds while it restarts. If the new version doesn't start, the current one is put back.</p>
+		</div>
+		<pre id="videoServerLog" style="margin: 8px 16px; max-height: 240px; overflow-y: auto; white-space: pre-wrap; color: #ccc; display: none;"></pre>
+		<div style="padding: 0 16px;">
+			<button class="btn btn-sm btn-video" id="videoServerUpdateButton" onclick="startVideoServerUpdate(false)" disabled>Update video server</button>
+			<button class="btn btn-sm btn-video" id="videoServerRollbackButton" onclick="startVideoServerUpdate(true)" disabled>Roll back</button>
+		</div>
+	</div>
+
+	<div class="card" style="padding: 16px;">
 		<div class="section-title">
 			<span>[LIVE STREAMS]</span>
 			<button class="btn btn-sm btn-video" onclick="refresh()">Refresh</button>
@@ -308,6 +324,74 @@
 	const toggleAutoAdd = (event) => {
 		socket.emit("setVideoAutoAdd", JSON.stringify({ enabled: event.target.checked }));
 	};
+
+	// video server updates run through the UI's own routes, not FTS, and keep
+	// being polled while running
+	let videoServerPollTimer = null;
+
+	const refreshVideoServer = () => {
+		fetch("/video-server/status", { credentials: "same-origin" })
+			.then((response) => response.json())
+			.then((status) => {
+				let updateButton = document.getElementById("videoServerUpdateButton");
+				let rollbackButton = document.getElementById("videoServerRollbackButton");
+				if (status.error) {
+					document.getElementById("videoServerVersion").textContent = status.error;
+					document.getElementById("videoServerService").textContent = "";
+					document.getElementById("videoServerState").textContent = "";
+					updateButton.disabled = rollbackButton.disabled = true;
+					return;
+				}
+				let version = status.installed || "unknown";
+				if (status.latest && status.latest !== status.installed) {
+					version += `, update available: ${status.latest}`;
+				} else if (status.latest) {
+					version += " (up to date)";
+				}
+				document.getElementById("videoServerVersion").textContent = version;
+				document.getElementById("videoServerService").textContent = status.service;
+				let state = status.update.state;
+				let detail = status.update.message ? `: ${status.update.message}` : "";
+				document.getElementById("videoServerState").textContent = state + detail;
+				let log = document.getElementById("videoServerLog");
+				log.textContent = status.log;
+				log.style.display = status.log ? "block" : "none";
+				log.scrollTop = log.scrollHeight;
+				let isRunning = state === "running";
+				updateButton.disabled = isRunning || !status.latest || status.latest === status.installed;
+				rollbackButton.disabled = isRunning || !status.previous;
+				rollbackButton.textContent = status.previous ? `Roll back to ${status.previous}` : "Roll back";
+				clearTimeout(videoServerPollTimer);
+				if (isRunning) {
+					videoServerPollTimer = setTimeout(refreshVideoServer, 3000);
+				}
+			})
+			.catch(() => {
+				document.getElementById("videoServerVersion").textContent = "could not check the video server";
+			});
+	};
+
+	const startVideoServerUpdate = (rollback) => {
+		let question = rollback
+			? "Go back to the previous video server version? Streams drop for a few seconds."
+			: "Update the video server to the latest MediaMTX release? Streams drop for a few seconds.";
+		if (!confirm(question)) {
+			return;
+		}
+		fetch(`/video-server/update${rollback ? "?rollback=1" : ""}`, {
+			method: "POST",
+			credentials: "same-origin",
+			headers: { "X-FTS-Update": "1" },
+		})
+			.then((response) => response.json())
+			.then((result) => {
+				snackFunction(result.message || result.error);
+				setTimeout(refreshVideoServer, 1000);
+			})
+			.catch(() => snackFunction("Starting the video server update failed"));
+	};
+
+	refreshVideoServer();
 
 	// the address the admin reached the UI on is the one publishers use too
 	document.querySelectorAll(".server-host").forEach((element) => (element.textContent = location.hostname));
