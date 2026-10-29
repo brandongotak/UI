@@ -1,0 +1,292 @@
+{% extends "base-site.html" %} {% block title %} Devices {% endblock %}
+
+<!-- Specific Page CSS goes HERE  -->
+{% block stylesheets %}{% endblock stylesheets %} {% block content %}
+
+<style>
+	.devices-table {
+		width: 100%;
+		border-collapse: collapse;
+	}
+
+	.devices-table th {
+		background-color: #27293d;
+		color: #b5b5b5;
+		font-size: 16px;
+		font-weight: 600;
+		text-align: left;
+		padding: 12px 14px;
+	}
+
+	.devices-table td {
+		color: #fff;
+		opacity: 0.85;
+		padding: 12px 14px;
+		vertical-align: top;
+		border-top: 1px solid #34364a;
+	}
+
+	.devices-table td.actions {
+		white-space: nowrap;
+	}
+
+	.devices-page .muted {
+		color: #b5b5b5;
+	}
+
+	.devices-page .stale {
+		color: #ff8d72;
+	}
+
+	.devices-page .team-dot {
+		display: inline-block;
+		width: 12px;
+		height: 12px;
+		border-radius: 50%;
+		margin-right: 8px;
+		border: 1px solid #555;
+	}
+
+	.devices-page .btn-devices {
+		color: #278aed;
+		border: 1px solid #278aed;
+		background: transparent;
+		margin: 0 6px 6px 0;
+	}
+
+	.devices-page .btn-devices-danger {
+		color: #fd5d93;
+		border: 1px solid #fd5d93;
+		background: transparent;
+		margin: 0 6px 6px 0;
+	}
+
+	.devices-page .section-title {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		font-size: 20px;
+		color: #278aed;
+		padding: 0 16px 8px 16px;
+	}
+</style>
+
+<div class="devices-page">
+	<div class="card" style="padding: 16px;">
+		<div class="section-title">
+			<span>[CONNECTED DEVICES] <span id="deviceCount" class="muted"></span></span>
+			<button class="btn btn-sm btn-devices" onclick="refresh()">Refresh</button>
+		</div>
+		<p style="padding: 0 16px;" class="muted">Devices connected to the CoT ports right now (8089 with a certificate,
+			8087 without). Updates every 5 seconds. Disconnect drops the connection; the device can reconnect unless you
+			disable its user on the User page.</p>
+		<div id="devicesError" class="text-danger" style="padding: 8px 16px;"></div>
+		<div style="padding: 8px 16px; overflow-x: auto;">
+			<table class="devices-table">
+				<thead>
+					<tr><th>Callsign</th><th>User</th><th>Device</th><th>Address</th><th>Connected</th><th>Last heard</th>
+						<th>Battery</th><th>Position</th><th></th></tr>
+				</thead>
+				<tbody id="devicesBody"><tr><td colspan="9" class="muted">loading...</td></tr></tbody>
+			</table>
+		</div>
+	</div>
+</div>
+
+<div id="snackbar">&nbsp;</div>
+
+{% endblock content %}
+
+<!-- Specific Page JS goes HERE  -->
+{% block javascripts %}
+<script>
+	var socket = io.connect(`{{protocol}}://{{ip}}:{{port}}`);
+
+	const authenticate = (socket) => {
+		socket.emit("authenticate", JSON.stringify({ Authenticate: "{{websocketkey | safe}}" }));
+		return new Promise(function (resolve, reject) {
+			socket.on("authentication", function (data) {
+				JSON.parse(data).successful === "True" ? resolve("True") : reject("False");
+			});
+		});
+	};
+
+	function snackFunction(message) {
+		let x = document.getElementById("snackbar");
+		x.textContent = message;
+		x.className = "show";
+		setTimeout(function () {
+			x.className = x.className.replace("show", "");
+		}, 3000);
+	}
+
+	const cell = (text, className) => {
+		let td = document.createElement("td");
+		td.textContent = text;
+		if (className) {
+			td.className = className;
+		}
+		return td;
+	};
+
+	// a second, dimmer line inside a cell
+	const addLine = (td, text, className) => {
+		if (!text) {
+			return;
+		}
+		td.appendChild(document.createElement("br"));
+		let span = document.createElement("span");
+		span.className = className || "muted";
+		span.textContent = text;
+		td.appendChild(span);
+	};
+
+	const button = (label, danger, onclick) => {
+		let b = document.createElement("button");
+		b.className = "btn btn-sm " + (danger ? "btn-devices-danger" : "btn-devices");
+		b.textContent = label;
+		b.onclick = onclick;
+		return b;
+	};
+
+	// ATAK's team colors
+	const TEAM_COLORS = {
+		"White": "#ffffff", "Yellow": "#ffff00", "Orange": "#ff7700", "Magenta": "#ff00ff", "Red": "#ff0000",
+		"Maroon": "#7f0000", "Purple": "#7f007f", "Dark Blue": "#00007f", "Blue": "#0000ff", "Cyan": "#00ffff",
+		"Teal": "#007f7f", "Green": "#00ff00", "Dark Green": "#007f00", "Brown": "#a0714f",
+	};
+
+	const ago = (iso) => {
+		if (!iso) {
+			return "";
+		}
+		let seconds = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+		if (seconds < 60) {
+			return `${seconds}s ago`;
+		}
+		if (seconds < 3600) {
+			return `${Math.floor(seconds / 60)}m ago`;
+		}
+		if (seconds < 86400) {
+			return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m ago`;
+		}
+		return `${Math.floor(seconds / 86400)}d ago`;
+	};
+
+	const formatTime = (iso) => (iso ? new Date(iso).toLocaleString() : "");
+
+	// devices report in every few seconds; a minute of silence means trouble
+	const STALE_SECONDS = 60;
+
+	const render = (status) => {
+		let body = document.getElementById("devicesBody");
+		body.replaceChildren();
+		document.getElementById("devicesError").textContent = status.error || "";
+		document.getElementById("deviceCount").textContent = `(${status.devices.length})`;
+		if (status.devices.length === 0) {
+			let row = document.createElement("tr");
+			row.appendChild(cell(status.error ? "" : "No devices are connected.", "muted"));
+			row.firstChild.colSpan = 9;
+			body.appendChild(row);
+			return;
+		}
+		for (let device of status.devices) {
+			let row = document.createElement("tr");
+
+			let callsign = cell("");
+			let dot = document.createElement("span");
+			dot.className = "team-dot";
+			dot.style.backgroundColor = TEAM_COLORS[device.team] || "transparent";
+			dot.title = device.team || "no team";
+			callsign.appendChild(dot);
+			callsign.appendChild(document.createTextNode(device.callsign || "(no callsign)"));
+			addLine(callsign, [device.team, device.role].filter(Boolean).join(", "));
+			addLine(callsign, device.uid);
+			row.appendChild(callsign);
+
+			let user = cell(device.username || (device.service === "tcp" ? "none (no certificate)" : "unknown"),
+				device.username ? "" : "muted");
+			if (!device.username && device.certificateName) {
+				addLine(user, `certificate ${device.certificateName}`);
+			}
+			if (device.groups) {
+				addLine(user, `groups: ${device.groups.join(", ") || "none active"}`);
+			}
+			row.appendChild(user);
+
+			let what = cell(device.platform || "unknown", device.platform ? "" : "muted");
+			addLine(what, device.device);
+			if (device.os) {
+				addLine(what, /^\d+$/.test(device.os) ? `Android API ${device.os}` : device.os);
+			}
+			row.appendChild(what);
+
+			let address = cell(device.ip);
+			addLine(address, device.service === "ssl" ? "SSL (8089)" : "TCP (8087)");
+			row.appendChild(address);
+
+			let connected = cell(ago(device.connected));
+			connected.title = formatTime(device.connected);
+			row.appendChild(connected);
+
+			let heardSeconds = device.lastSeen ? (Date.now() - new Date(device.lastSeen).getTime()) / 1000 : null;
+			let heard = cell(device.lastSeen ? ago(device.lastSeen) : "nothing since connecting",
+				heardSeconds === null ? "muted" : heardSeconds > STALE_SECONDS ? "stale" : "");
+			heard.title = formatTime(device.lastSeen);
+			if (device.messages) {
+				addLine(heard, `${device.messages} message${device.messages === 1 ? "" : "s"}`);
+			}
+			row.appendChild(heard);
+
+			let battery = parseInt(device.battery, 10);
+			row.appendChild(cell(isNaN(battery) ? "" : `${battery}%`, battery <= 20 ? "stale" : ""));
+
+			let position = cell("");
+			if (device.lat !== null && device.lon !== null) {
+				position.textContent = `${device.lat.toFixed(5)}, ${device.lon.toFixed(5)}`;
+				addLine(position, device.positionTime ? `reported ${ago(device.positionTime)}` : "when it connected");
+			} else {
+				position.textContent = "no fix";
+				position.className = "muted";
+			}
+			row.appendChild(position);
+
+			let actions = cell("", "actions");
+			if (device.lat !== null && device.lon !== null) {
+				actions.appendChild(button("Copy position", false, () => {
+					let text = `${device.lat}, ${device.lon}`;
+					navigator.clipboard.writeText(text).then(() => snackFunction("Copied"), () => snackFunction(text));
+				}));
+			}
+			actions.appendChild(button("Disconnect", true, () => {
+				let question = `Disconnect ${device.callsign || device.uid}? The device will usually reconnect on its own.`;
+				if (device.username) {
+					question += ` To keep it off, disable the user ${device.username} on the User page.`;
+				}
+				if (confirm(question)) {
+					socket.emit("disconnectDevice", JSON.stringify({ uid: device.uid, callsign: device.callsign }));
+				}
+			}));
+			row.appendChild(actions);
+			body.appendChild(row);
+		}
+	};
+
+	socket.on("connectedDevicesUpdate", function (data) {
+		let status = JSON.parse(data);
+		render(status);
+		if (status.message) {
+			snackFunction(status.message);
+		} else if (status.error && status.devices.length > 0) {
+			snackFunction(status.error);
+		}
+	});
+
+	const refresh = () => socket.emit("connectedDevices");
+
+	authenticate(socket).then(() => {
+		refresh();
+		setInterval(refresh, 5000);
+	});
+</script>
+{% endblock javascripts %}
